@@ -63,7 +63,9 @@ fixed here.
   no dependence on pandas_ta's generated names.
 - Factor exposures: rolling 24-month FF5 betas via RollingOLS, **lagged one month**;
   rows with missing betas are dropped, never mean-imputed (mean-imputation leaked future
-  data in the notebook).
+  data in the notebook). Exception: because Ken French publishes factors with a 1–2 month
+  lag, a stock's last known betas may be forward-filled up to 3 months (backward-looking
+  carry-forward — no leakage) so current-month scoring stays possible.
 
 ### 3.4 Label (champion training only)
 
@@ -101,7 +103,8 @@ fixed here.
 - Benchmarks: SPY total return; 1,000-draw bootstrap of random 10-stock equal-weight
   portfolios from the same point-in-time universe (the strategy must beat the bootstrap
   distribution, not just SPY).
-- Metrics: CAGR, annualized vol, Sharpe (excess over 13-week T-bill), max drawdown,
+- Metrics: CAGR, annualized vol, Sharpe (excess over the Fama-French risk-free rate,
+  already in the factor download), max drawdown,
   Calmar, monthly turnover, and per-calendar-year sub-period table.
 - Engine: small hand-rolled vectorized backtester in `src/backtest/`, unit-tested against
   hand-computed toy cases. No zipline/vectorbt dependency.
