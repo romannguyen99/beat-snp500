@@ -4,7 +4,7 @@
   "stats": {
     "last_date": "2026-07-06",
     "global_max_date": "2026-07-06",
-    "n_tickers": 660,
+    "n_tickers": 647,
     "n_missing": 0,
     "missing_sample": [],
     "nan_frac_close": 0.0,

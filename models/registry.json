@@ -7,5 +7,14 @@
     "ic_mean": 0.005906260498464599,
     "created_at": "2026-07-06",
     "artifact": "models/champion_202606.txt"
+  },
+  {
+    "model_id": "champion_202606",
+    "type": "champion",
+    "trained_through": "2026-05-31",
+    "train_window_months": 36,
+    "ic_mean": 0.014140788639655259,
+    "created_at": "2026-07-07",
+    "artifact": "models/champion_202606.txt"
   }
 ]

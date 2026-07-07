@@ -1,16 +1,16 @@
 {
   "signal_date": "2026-06-30",
-  "generated_at": "2026-07-06",
+  "generated_at": "2026-07-07",
   "weights": {
     "INTC": 0.1,
-    "ECHO": 0.1,
+    "LRCX": 0.1,
     "STX": 0.1,
     "WDC": 0.1,
     "KLAC": 0.1,
     "MU": 0.1,
-    "LRCX": 0.1,
-    "TER": 0.1,
+    "GLW": 0.1,
     "AMAT": 0.1,
+    "ECHO": 0.1,
     "AMD": 0.1
   }
 }
