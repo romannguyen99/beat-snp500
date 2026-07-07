@@ -45,7 +45,8 @@ fixed here.
 - Daily OHLCV from yfinance with `auto_adjust=True` (split- and dividend-adjusted) —
   one consistent price basis for features AND returns.
 - Local Parquet cache under `data/`; daily job fetches only the incremental tail.
-  No full re-downloads.
+  Daily updates are incremental with basis-shift detection on a 5-day overlap; a
+  monthly full refresh re-downloads history so dividend/split adjustments stay consistent.
 - Fama-French 5 factors (monthly) via `pandas_datareader` from the Ken French library.
 - Price history from ~2008 onward (subject to membership-table coverage). Warm-up eats
   ~36 months (12m momentum + 24m betas) and the champion's rolling training window
