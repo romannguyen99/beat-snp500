@@ -37,18 +37,21 @@ def test_build_leaderboards(make_panel, tmp_path):
     assert len(champ["picks"]) == 10
     assert set(champ["picks"][0]["features"]) == set(config.FEATURES)
     assert champ["as_of"] == "2026-07-02"
-    chall = read_json(tmp_path / "leaderboard_challenger.json")
-    assert len(chall["picks"]) == 10
+    km = read_json(tmp_path / "leaderboard_kmeans.json")
+    assert km["status"] in ("active", "hold")
+    if km["status"] == "active":
+        assert 5 <= len(km["picks"]) <= 10
+        weights = [p["weight"] for p in km["picks"]]
+        assert weights == sorted(weights, reverse=True)
+        assert sum(weights) == pytest.approx(1.0)
+        assert max(weights) <= 0.20 + 1e-9
 
 
 def test_build_leaderboards_without_model(make_panel, tmp_path):
-    # n_tickers large enough that the momentum cluster k-means finds is
-    # reliably >= N_PICKS, otherwise kmeans_top10's min-cluster-size guard
-    # (see test_challenger.py) skips the month and no board gets written
     build_leaderboards(make_panel(n_months=5, n_tickers=200), None, tmp_path,
                        pd.Timestamp("2026-07-02"))
     assert not (tmp_path / "leaderboard_champion.json").exists()
-    assert (tmp_path / "leaderboard_challenger.json").exists()
+    assert (tmp_path / "leaderboard_kmeans.json").exists()
 
 
 def test_update_live_track_idempotent(tmp_path):
@@ -115,4 +118,9 @@ def test_monthly_rebalance_writes_artifacts(make_panel, tmp_path):
     assert len(entries) == 1 and entries[0]["type"] == "champion"
     h = read_json(out_dir / "holdings_champion.json")
     assert len(h["weights"]) == 10
-    assert (out_dir / "holdings_challenger.json").exists()
+    p = out_dir / "holdings_kmeans.json"
+    if p.exists():  # a hold month legitimately writes nothing
+        w = read_json(p)["weights"]
+        assert 5 <= len(w) <= 10
+        assert sum(w.values()) == pytest.approx(1.0)
+        assert max(w.values()) <= 0.20 + 1e-9

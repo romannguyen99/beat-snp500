@@ -11,10 +11,10 @@ from beat_snp500.data.prices import close_matrix, update_price_cache
 from beat_snp500.data.validation import validate_prices
 from beat_snp500.features.pipeline import build_feature_panel
 from beat_snp500.io_utils import atomic_write_json, atomic_write_parquet, read_json
-from beat_snp500.models.challenger import kmeans_top10
 from beat_snp500.models.champion import load_model, save_model, train_champion
+from beat_snp500.models.kmeans import kmeans_must_buys
 from beat_snp500.models.registry import append_entry, latest_model
-from beat_snp500.portfolio.weights import equal_weights
+from beat_snp500.portfolio.weights import conviction_weights, equal_weights
 
 TRACK_COLS = ["date", "model", "ret", "spy_ret"]
 
@@ -45,13 +45,8 @@ def build_leaderboards(panel: pd.DataFrame, booster, out_dir, as_of,
     boards = {}
     if booster is not None:
         scores = pd.Series(booster.predict(feats), index=feats.index)
-        boards["champion"] = scores.nlargest(n_picks)
-    chall = kmeans_top10(month, n_picks=n_picks)
-    if chall:
-        boards["challenger"] = pd.Series(
-            range(len(chall), 0, -1), index=chall, dtype=float)
-    for model, ranked in boards.items():
-        payload = {
+        ranked = scores.nlargest(n_picks)
+        atomic_write_json({
             "as_of": str(pd.Timestamp(as_of).date()),
             "signal_month": str(latest.date()),
             "picks": [
@@ -59,8 +54,21 @@ def build_leaderboards(panel: pd.DataFrame, booster, out_dir, as_of,
                  "features": {k: float(feats.loc[t, k]) for k in config.FEATURES}}
                 for t, v in ranked.items()
             ],
-        }
-        atomic_write_json(payload, Path(out_dir) / f"leaderboard_{model}.json")
+        }, Path(out_dir) / "leaderboard_champion.json")
+        boards["champion"] = ranked
+    sig = kmeans_must_buys(month)
+    weights = conviction_weights(sig) if sig else {}
+    atomic_write_json({
+        "as_of": str(pd.Timestamp(as_of).date()),
+        "signal_month": str(latest.date()),
+        "status": "active" if weights else "hold",
+        "picks": [
+            {"ticker": t, "weight": float(weights[t]), "score": float(sig[t]),
+             "features": {k: float(feats.loc[t, k]) for k in config.FEATURES}}
+            for t in sorted(weights, key=weights.get, reverse=True)
+        ],
+    }, Path(out_dir) / "leaderboard_kmeans.json")
+    boards["kmeans"] = weights
     return boards
 
 
@@ -117,18 +125,20 @@ def monthly_rebalance(panel_completed: pd.DataFrame, models_dir, out_dir, regist
 
     month = panel_completed.xs(latest, level="date")
     scores = pd.Series(model.predict(month[config.FEATURES]), index=month.index)
-    selections = {
-        "champion": scores.nlargest(config.N_PICKS).index.tolist(),
-        "challenger": kmeans_top10(month),
-    }
-    for name, tickers in selections.items():
-        if len(tickers) < config.N_PICKS:
-            continue
+    champ = scores.nlargest(config.N_PICKS).index.tolist()
+    if len(champ) == config.N_PICKS:
         atomic_write_json(
             {"signal_date": str(latest.date()),
              "generated_at": str(pd.Timestamp(as_of).date()),
-             "weights": equal_weights(tickers)},
-            Path(out_dir) / f"holdings_{name}.json")
+             "weights": equal_weights(champ)},
+            Path(out_dir) / "holdings_champion.json")
+    sig = kmeans_must_buys(month)
+    if sig:  # hold months keep the previous holdings_kmeans.json in force
+        atomic_write_json(
+            {"signal_date": str(latest.date()),
+             "generated_at": str(pd.Timestamp(as_of).date()),
+             "weights": conviction_weights(sig)},
+            Path(out_dir) / "holdings_kmeans.json")
 
 
 def run(as_of=None, force_rebalance: bool = False) -> int:
@@ -157,7 +167,7 @@ def run(as_of=None, force_rebalance: bool = False) -> int:
     build_leaderboards(panel, booster, config.OUTPUTS_DIR, as_of)
 
     holdings = {}
-    for name in ["champion", "challenger"]:
+    for name in ["champion", "kmeans"]:
         p = config.OUTPUTS_DIR / f"holdings_{name}.json"
         if p.exists():
             holdings[name] = read_json(p)

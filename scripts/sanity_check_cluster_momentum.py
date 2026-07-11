@@ -1,4 +1,4 @@
-"""Sanity check #3: decompose the challenger's edge into two pieces —
+"""Sanity check #3: decompose the kmeans model's edge into two pieces —
 (A) cluster selection: does the cluster it picks (highest composite momentum)
     actually earn a higher average forward return than the rest of the
     universe that month? (a level effect, not a ranking)
@@ -7,9 +7,9 @@
     (an IC, directly comparable to sanity_check_feature_ic.py's unconditional
     momentum IC)
 
-Mirrors challenger.py's kmeans_top10 clustering exactly so this reflects what
-challenger_picks actually does, just with the intermediate cluster labels
-exposed instead of only the final top-10.
+Mirrors kmeans.py's cluster_month clustering exactly so this reflects what
+kmeans_must_buys actually does, just with the intermediate cluster labels
+exposed instead of only the final must-buy set.
 """
 import pandas as pd
 from sklearn.cluster import KMeans
@@ -18,7 +18,7 @@ from sklearn.preprocessing import StandardScaler
 from beat_snp500 import config
 from beat_snp500.data.factors import load_ff5
 from beat_snp500.features.pipeline import build_feature_panel
-from beat_snp500.models.challenger import MOM_COLS
+from beat_snp500.models.kmeans import MOM_COLS
 
 
 def cluster_month(month_df: pd.DataFrame) -> tuple[pd.Series, pd.Series, int]:

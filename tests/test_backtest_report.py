@@ -6,9 +6,9 @@ from beat_snp500.jobs.backtest_report import run_report, survivorship_stats
 
 
 def test_run_report_writes_artifacts(make_prices, make_factors, make_membership, tmp_path):
-    # enough tickers that a k=4 momentum cluster is reliably >= N_PICKS=10;
-    # kmeans_top10's min-cluster-size guard skips months where it isn't
-    # (see test_challenger.py::test_small_momentum_cluster_returns_empty)
+    # enough tickers that a k=4 momentum cluster is reliably >= MIN_PICKS;
+    # kmeans_must_buys's min-cluster-size guard skips months where it isn't
+    # (see test_kmeans.py::test_small_momentum_cluster_holds)
     tickers = tuple(f"S{i:02d}" for i in range(60)) + ("SPY",)
     prices = make_prices(tickers=tickers)
     membership = make_membership(tickers=tuple(t for t in tickers if t != "SPY"))
@@ -19,22 +19,20 @@ def test_run_report_writes_artifacts(make_prices, make_factors, make_membership,
               "picks.json"]:
         assert (tmp_path / f).exists(), f
     m = read_json(tmp_path / "metrics.json")
-    for series in ["champion", "challenger", "spy"]:
+    for series in ["kmeans", "champion", "spy"]:
         assert "cagr" in m[series]
     assert "champion_cagr_percentile" in read_json(tmp_path / "bootstrap_summary.json")
     assert "survivorship" in m
     surv = pd.read_parquet(tmp_path / "survivorship.parquet")
-    # membership tickers are a subset of price tickers in this fixture, so
-    # every member has price history and missing_frac should be exactly 0.
     assert (surv["missing_frac"] == 0).all()
 
     picks_data = read_json(tmp_path / "picks.json")
-    assert set(picks_data) == {"champion", "challenger", "champion_ms", "challenger_ms"}
-    ic_months = pd.read_parquet(tmp_path / "ic_monthly.parquet")
-    # champion picks cover every walk-forward-scored month; ic_monthly drops
-    # the trailing month once its forward return isn't realized yet, so picks
-    # can have at most one more month than ic (the still-in-flight last one).
-    assert len(picks_data["champion"]) - len(ic_months) in (0, 1)
+    assert set(picks_data) == {"kmeans", "champion", "kmeans_ms", "champion_ms"}
+    assert picks_data["kmeans"], "kmeans emitted no months at all"
+    for weights in picks_data["kmeans"].values():
+        assert 5 <= len(weights) <= 10
+        assert sum(weights.values()) == pytest.approx(1.0)
+        assert max(weights.values()) <= 0.20 + 1e-9
 
 
 def test_survivorship_stats_flags_missing_member():

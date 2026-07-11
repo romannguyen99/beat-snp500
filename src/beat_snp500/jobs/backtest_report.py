@@ -10,9 +10,9 @@ from beat_snp500.backtest.metrics import perf_metrics, yearly_returns
 from beat_snp500.data.prices import close_matrix
 from beat_snp500.features.pipeline import build_feature_panel
 from beat_snp500.io_utils import atomic_write_json, atomic_write_parquet
-from beat_snp500.models.challenger import challenger_picks
 from beat_snp500.models.champion import (champion_picks, decile_spread,
                                           spearman_ic, walk_forward_scores)
+from beat_snp500.models.kmeans import kmeans_picks
 from beat_snp500.portfolio.weights import max_sharpe_weights
 
 
@@ -54,10 +54,10 @@ def run_report(prices: pd.DataFrame, membership: pd.DataFrame, factors: pd.DataF
     spread = decile_spread(scores, panel["fwd_return_1m"])
     picks = {
         "champion": champion_picks(scores),
-        "challenger": challenger_picks(panel),
+        "kmeans": kmeans_picks(panel),
     }
     picks["champion_ms"] = _with_max_sharpe(picks["champion"], close)
-    picks["challenger_ms"] = _with_max_sharpe(picks["challenger"], close)
+    picks["kmeans_ms"] = _with_max_sharpe(picks["kmeans"], close)
 
     results = {name: run_backtest(p, close) for name, p in picks.items()}
     start = results["champion"].daily_returns.index.min()
