@@ -4,7 +4,7 @@
 
 **Goal:** Replace fixed top-10 stock picking with variable-count "must-buy" selection (5–10 names, conviction-weighted, 20% cap), re-rate K-means as champion via rename + role pointer, and run a tuning/feature improvement round gated by a dev/holdout protocol.
 
-**Architecture:** Two monthly stock-picking models (`models/kmeans.py`, `models/lgbm.py`) emit `{date: {ticker: weight}}` pick dicts consumed unchanged by the backtest engine, the daily job, and the dashboard. Selection = signal threshold (momentum z > 0 for kmeans, score z ≥ 1 for lgbm) with a hold-below-5 floor and keep-top-10 cap; weights = signal-proportional with 20% cap. `config.CHAMPION` is the single role pointer. Tuning and new features are validated on months ≤ 2019-12 with one holdout confirmation on 2020+.
+**Architecture:** Two monthly stock-picking models (`models/kmeans.py`, `models/lgbm.py`) emit `{date: {ticker: weight}}` pick dicts consumed unchanged by the backtest engine, the daily job, and the dashboard. Selection = signal threshold (momentum z > 0 for kmeans, score z ≥ 1 for lgbm) with a hold-below-5 floor and keep-top-10 cap; weights = signal-proportional with 20% cap. `config.CHAMPION` is the single role pointer. Each model module is renamed via `git mv` with all its consumers fixed in the same task — no transitional duplicate modules. Tuning and new features are validated on months ≤ 2019-12 with one holdout confirmation on 2020+.
 
 **Tech Stack:** Python 3.13 (`.venv`), pandas 2.x (<3), scikit-learn KMeans, LightGBM, pytest, Streamlit + Plotly.
 
@@ -16,9 +16,9 @@
 - pandas must stay `>=2.2,<3.0`; do not bump dependencies.
 - Git commits: conventional prefixes matching repo history (`feat:`, `fix:`, `docs:`, `data:`, `test:`, `refactor:`). **Never add a `Co-Authored-By` trailer — commits must show only Roman as author.**
 - Config values, verbatim from the spec: `MIN_PICKS = 5`, `MAX_PICKS = 10`, `WEIGHT_CAP = 0.20`, `MUST_BUY_Z_KMEANS = 0.0`, `MUST_BUY_Z_LGBM = 1.0`, `CHAMPION = "kmeans"`, `DEV_END = "2019-12-31"`.
-- Series names everywhere: `kmeans`, `lgbm`, `kmeans_ms`, `lgbm_ms`, `spy`. The words champion/challenger are *roles*, resolved via `config.CHAMPION`, never hardcoded identities.
+- Series names everywhere: `kmeans`, `lgbm`, `kmeans_ms`, `lgbm_ms`, `spy`. The words champion/challenger are *roles*, resolved via `config.CHAMPION`, never hardcoded identities. (Tasks 3 and 4 are the rename boundary: after Task 3 the kmeans series is renamed while lgbm is still `champion`; Task 4 finishes the rename.)
 - Hold semantics: a model that can't field ≥ `MIN_PICKS` must-buys emits **no entry** for that month (the backtest engine and live holdings already interpret a missing month as "keep previous portfolio").
-- Every task must leave the full suite green: `.venv/bin/python -m pytest tests/ -q` → all pass. Old `challenger.py`/`champion.py` coexist with new modules until Task 6 removes them.
+- Every task must leave the full suite green: `.venv/bin/python -m pytest tests/ -q` → all pass.
 - Data files under `data/` and `models/` are committed artifacts in this repo (see `data:` commits in history) — commit them when a task changes them.
 
 ## File Map
@@ -27,19 +27,18 @@
 |---|---|---|
 | `src/beat_snp500/config.py` | modify | new constants; `FEATURES` split into `BASE_FEATURES` + promotable `FEATURES` |
 | `src/beat_snp500/portfolio/weights.py` | modify | add `conviction_weights` |
-| `src/beat_snp500/models/kmeans.py` | create (T2) | clustering + must-buy selection + picks |
-| `src/beat_snp500/models/lgbm.py` | create (T3) | walk-forward scoring + must-buy selection + picks (evolved copy of champion.py) |
-| `src/beat_snp500/models/challenger.py`, `champion.py` | delete (T6) | superseded |
-| `src/beat_snp500/backtest/bootstrap.py` | modify (T4) | per-month draw counts |
-| `src/beat_snp500/jobs/backtest_report.py` | modify (T5) | new series names, champion-role bootstrap |
-| `src/beat_snp500/jobs/daily.py` | modify (T6) | PM leaderboards/holdings, `lgbm` registry type |
-| `scripts/migrate_model_names.py` | create (T7) | one-time idempotent rename of stored artifacts |
-| `app/streamlit_app.py` | modify (T8) | PM portfolio view, champion badge, new names |
-| `src/beat_snp500/features/advanced.py` | create (T9) | resid/vol-scaled/cluster-relative momentum |
-| `src/beat_snp500/features/pipeline.py` | modify (T9) | wire advanced features |
-| `scripts/tune_kmeans.py` | create (T10) | dev/holdout grid search |
-| `scripts/evaluate_features.py` | create (T11) | dev/holdout feature IC gate |
-| `improvement/improve_v2.md` | create (T12) | results write-up |
+| `src/beat_snp500/backtest/bootstrap.py` | modify (T2) | per-month draw counts |
+| `src/beat_snp500/models/challenger.py` → `models/kmeans.py` | git mv + rewrite (T3) | clustering + must-buy selection + picks |
+| `src/beat_snp500/models/champion.py` → `models/lgbm.py` | git mv + rewrite (T4) | walk-forward scoring + must-buy selection + picks |
+| `src/beat_snp500/jobs/backtest_report.py` | modify (T3, T4) | new series names, champion-role bootstrap |
+| `src/beat_snp500/jobs/daily.py` | modify (T3, T4) | PM leaderboards/holdings, `lgbm` registry type |
+| `scripts/migrate_model_names.py` | create (T5) | one-time idempotent rename of stored artifacts |
+| `app/streamlit_app.py` | modify (T6) | PM portfolio view, champion badge, new names |
+| `src/beat_snp500/features/advanced.py` | create (T7) | resid/vol-scaled/cluster-relative momentum |
+| `src/beat_snp500/features/pipeline.py` | modify (T7) | wire advanced features |
+| `scripts/tune_kmeans.py` | create (T8) | dev/holdout grid search |
+| `scripts/evaluate_features.py` | create (T9) | dev/holdout feature IC gate |
+| `improvement/improve_v2.md` | create (T10) | results write-up |
 
 ---
 
@@ -99,7 +98,7 @@ def test_conviction_weights_empty_returns_empty():
 Run: `.venv/bin/python -m pytest tests/test_weights.py -q`
 Expected: ImportError — `conviction_weights` not defined.
 
-- [ ] **Step 3: Implement.** In `src/beat_snp500/config.py`, rename the existing `FEATURES = [...]` list to `BASE_FEATURES = [...]` and add below it (delete nothing else; keep `N_PICKS` for now — it's removed in Task 6):
+- [ ] **Step 3: Implement.** In `src/beat_snp500/config.py`, rename the existing `FEATURES = [...]` list to `BASE_FEATURES = [...]` and add below it (delete nothing else; keep `N_PICKS` for now — it's removed in Task 4):
 
 ```python
 # model inputs; validated extras get appended here (spec §4b), while
@@ -159,17 +158,81 @@ git commit -m "feat(portfolio): conviction-weighted allocation with 20% cap + se
 
 ---
 
-### Task 2: K-means must-buy model (`models/kmeans.py`)
+### Task 2: Count-matched bootstrap
 
 **Files:**
-- Create: `src/beat_snp500/models/kmeans.py`
-- Test: `tests/test_kmeans.py` (new; `test_challenger.py` stays until Task 6)
+- Modify: `src/beat_snp500/backtest/bootstrap.py`
+- Test: `tests/test_bootstrap.py`
 
 **Interfaces:**
-- Consumes: `conviction_weights` (Task 1), `config.BASE_FEATURES`, `config.MIN_PICKS/MAX_PICKS/MUST_BUY_Z_KMEANS/K_CLUSTERS/SEED`.
-- Produces: `cluster_month(month_df, k=config.K_CLUSTERS, seed=config.SEED) -> tuple[pd.DataFrame, pd.Series]` (standardized features `Xz` + integer cluster `labels`, both indexed by ticker; `(empty, empty)` if fewer rows than k); `kmeans_must_buys(month_df, ...) -> dict[str, float]` ({ticker: momentum z}, `{}` = hold); `kmeans_picks(panel) -> dict[pd.Timestamp, dict[str, float]]` (conviction weights). Task 9 reuses `cluster_month`; Task 10 adds `mom_mode`/`select_rule` params.
+- Consumes: nothing new.
+- Produces: `random_portfolio_bootstrap(universe, holding_rets, n_draws=1000, n_picks: int | dict = 10, cost_bps=config.COST_BPS_ONE_WAY, seed=config.SEED) -> dict` — when `n_picks` is a dict keyed by month timestamp, each month draws that month's count.
 
-- [ ] **Step 1: Write the failing tests** — create `tests/test_kmeans.py`:
+- [ ] **Step 1: Write the failing test** — append to `tests/test_bootstrap.py`:
+
+```python
+def test_per_month_pick_counts():
+    dates = pd.date_range("2024-01-31", periods=1, freq="ME")
+    tickers = [f"T{i}" for i in range(30)]
+    # 15 winners (+10%), 15 losers (0%). A 1-name draw lands on +10% in ~half
+    # of draws, so p95 == 1.10 iff the per-month count of 1 is respected; the
+    # default 10-name draw's p95 sits far below 1.10 (needs all 10 winners).
+    hr = pd.DataFrame(0.0, index=dates, columns=tickers)
+    hr.iloc[0, :15] = 0.10
+    uni = {t: tickers for t in dates}
+    out = random_portfolio_bootstrap(uni, hr, n_draws=200,
+                                     n_picks={dates[0]: 1}, cost_bps=0.0)
+    assert out["band"]["p95"].iloc[0] == pytest.approx(1.10)
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `.venv/bin/python -m pytest tests/test_bootstrap.py -q`
+Expected: FAIL — `n_picks` dict is not accepted / TypeError in `min()`.
+
+- [ ] **Step 3: Implement.** In `random_portfolio_bootstrap`, change the signature default `n_picks: int = config.N_PICKS` to `n_picks: int | dict = 10`, and inside the date loop replace `k = min(n_picks, len(rets_t))` with:
+
+```python
+        want = n_picks[t] if isinstance(n_picks, dict) else n_picks
+        k = min(want, len(rets_t))
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `.venv/bin/python -m pytest tests/test_bootstrap.py tests/ -q`
+Expected: all pass (existing tests use the int form, unchanged behavior).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/beat_snp500/backtest/bootstrap.py tests/test_bootstrap.py
+git commit -m "feat(bootstrap): count-matched random portfolios for variable pick counts"
+```
+
+---
+
+### Task 3: K-means must-buy model + all its consumers
+
+`git mv` rename — no transitional duplicate module (explicit project decision). After this task the K-means side is fully renamed and on must-buy selection; the LightGBM side still runs as `champion` with fixed top-10 until Task 4.
+
+**Files:**
+- Rename: `git mv src/beat_snp500/models/challenger.py src/beat_snp500/models/kmeans.py` (then rewrite)
+- Rename: `git mv tests/test_challenger.py tests/test_kmeans.py` (then rewrite)
+- Modify: `src/beat_snp500/jobs/backtest_report.py`, `src/beat_snp500/jobs/daily.py`, `scripts/sanity_check_cluster_momentum.py`, `tests/test_daily.py`, `tests/test_backtest_report.py`
+
+**Interfaces:**
+- Consumes: `conviction_weights` (T1), `config.BASE_FEATURES`, `config.MIN_PICKS/MAX_PICKS/MUST_BUY_Z_KMEANS/K_CLUSTERS/SEED`.
+- Produces: `cluster_month(month_df, k=config.K_CLUSTERS, seed=config.SEED) -> tuple[pd.DataFrame, pd.Series]` (standardized features `Xz` + integer cluster `labels`, both indexed by ticker; `(empty, empty)` if fewer rows than k); `kmeans_must_buys(month_df, ...) -> dict[str, float]` ({ticker: momentum z}, `{}` = hold); `kmeans_picks(panel, **kwargs) -> dict[pd.Timestamp, dict[str, float]]` (conviction weights). Series `kmeans` / `kmeans_ms` in report outputs; `leaderboard_kmeans.json` (new payload shape below) and `holdings_kmeans.json` from the daily job. Task 7 reuses `cluster_month`; Task 8 adds `mom_mode`/`select_rule` params.
+- Leaderboard payload shape (kmeans now, lgbm adopts it in Task 4): `{"as_of", "signal_month", "status": "active"|"hold", "picks": [{"ticker", "weight", "score", "features"}]}` — picks sorted by weight desc, empty list on hold.
+
+- [ ] **Step 1: Rename the module and test files**
+
+```bash
+git mv src/beat_snp500/models/challenger.py src/beat_snp500/models/kmeans.py
+git mv tests/test_challenger.py tests/test_kmeans.py
+```
+
+- [ ] **Step 2: Write the failing tests** — replace the entire contents of `tests/test_kmeans.py` with:
 
 ```python
 import numpy as np
@@ -242,12 +305,83 @@ def test_kmeans_picks_weights_valid():
         assert max(w.values()) <= config.WEIGHT_CAP + 1e-9
 ```
 
-- [ ] **Step 2: Run to verify failure**
+Also update the consumer tests now so the whole suite is red only for the right reasons:
 
-Run: `.venv/bin/python -m pytest tests/test_kmeans.py -q`
-Expected: ModuleNotFoundError — `beat_snp500.models.kmeans` does not exist.
+In `tests/test_backtest_report.py::test_run_report_writes_artifacts`, replace the assertions after `metrics = run_report(...)` to the end of the function with (transitional: lgbm side still `champion`):
 
-- [ ] **Step 3: Implement** — create `src/beat_snp500/models/kmeans.py`:
+```python
+    for f in ["equity_curves.parquet", "metrics.json", "ic_monthly.parquet",
+              "bootstrap.parquet", "bootstrap_summary.json", "survivorship.parquet",
+              "picks.json"]:
+        assert (tmp_path / f).exists(), f
+    m = read_json(tmp_path / "metrics.json")
+    for series in ["kmeans", "champion", "spy"]:
+        assert "cagr" in m[series]
+    assert "champion_cagr_percentile" in read_json(tmp_path / "bootstrap_summary.json")
+    assert "survivorship" in m
+    surv = pd.read_parquet(tmp_path / "survivorship.parquet")
+    assert (surv["missing_frac"] == 0).all()
+
+    picks_data = read_json(tmp_path / "picks.json")
+    assert set(picks_data) == {"kmeans", "champion", "kmeans_ms", "champion_ms"}
+    assert picks_data["kmeans"], "kmeans emitted no months at all"
+    for weights in picks_data["kmeans"].values():
+        assert 5 <= len(weights) <= 10
+        assert sum(weights.values()) == pytest.approx(1.0)
+        assert max(weights.values()) <= 0.20 + 1e-9
+```
+
+In `tests/test_daily.py` replace `test_build_leaderboards`, `test_build_leaderboards_without_model`, and `test_monthly_rebalance_writes_artifacts` with (champion assertions unchanged; kmeans on the new payload):
+
+```python
+def test_build_leaderboards(make_panel, tmp_path):
+    panel = make_panel(n_months=30)
+    model, _ = train_champion(panel.dropna(subset=["fwd_return_1m"]), train_window=12)
+    build_leaderboards(panel, model.booster_, tmp_path, pd.Timestamp("2026-07-02"))
+    champ = read_json(tmp_path / "leaderboard_champion.json")
+    assert len(champ["picks"]) == 10
+    assert set(champ["picks"][0]["features"]) == set(config.FEATURES)
+    assert champ["as_of"] == "2026-07-02"
+    km = read_json(tmp_path / "leaderboard_kmeans.json")
+    assert km["status"] in ("active", "hold")
+    if km["status"] == "active":
+        assert 5 <= len(km["picks"]) <= 10
+        weights = [p["weight"] for p in km["picks"]]
+        assert weights == sorted(weights, reverse=True)
+        assert sum(weights) == pytest.approx(1.0)
+        assert max(weights) <= 0.20 + 1e-9
+
+
+def test_build_leaderboards_without_model(make_panel, tmp_path):
+    build_leaderboards(make_panel(n_months=5, n_tickers=200), None, tmp_path,
+                       pd.Timestamp("2026-07-02"))
+    assert not (tmp_path / "leaderboard_champion.json").exists()
+    assert (tmp_path / "leaderboard_kmeans.json").exists()
+
+
+def test_monthly_rebalance_writes_artifacts(make_panel, tmp_path):
+    models_dir, out_dir = tmp_path / "models", tmp_path / "out"
+    reg = models_dir / "registry.json"
+    monthly_rebalance(make_panel(n_months=30), models_dir, out_dir, reg,
+                      pd.Timestamp("2026-07-01"), train_window=12)
+    entries = load_registry(reg)
+    assert len(entries) == 1 and entries[0]["type"] == "champion"
+    h = read_json(out_dir / "holdings_champion.json")
+    assert len(h["weights"]) == 10
+    p = out_dir / "holdings_kmeans.json"
+    if p.exists():  # a hold month legitimately writes nothing
+        w = read_json(p)["weights"]
+        assert 5 <= len(w) <= 10
+        assert sum(w.values()) == pytest.approx(1.0)
+        assert max(w.values()) <= 0.20 + 1e-9
+```
+
+- [ ] **Step 3: Run to verify failure**
+
+Run: `.venv/bin/python -m pytest tests/test_kmeans.py tests/test_daily.py tests/test_backtest_report.py -q`
+Expected: FAIL — `beat_snp500.models.kmeans` has old contents; consumers still import `beat_snp500.models.challenger`.
+
+- [ ] **Step 4: Implement.** Replace the entire contents of `src/beat_snp500/models/kmeans.py` with:
 
 ```python
 import pandas as pd
@@ -303,31 +437,109 @@ def kmeans_picks(panel: pd.DataFrame, **kwargs) -> dict:
     return out
 ```
 
-- [ ] **Step 4: Run tests**
+In `src/beat_snp500/jobs/backtest_report.py`:
+- Replace `from beat_snp500.models.challenger import challenger_picks` with `from beat_snp500.models.kmeans import kmeans_picks`.
+- In `run_report`, rename the picks entries: `"challenger": challenger_picks(panel)` → `"kmeans": kmeans_picks(panel)` and `picks["challenger_ms"] = _with_max_sharpe(picks["challenger"], close)` → `picks["kmeans_ms"] = _with_max_sharpe(picks["kmeans"], close)`. Everything champion-side stays.
 
-Run: `.venv/bin/python -m pytest tests/test_kmeans.py tests/ -q`
-Expected: all pass. (If `test_must_buys_capped_at_max_picks` is flaky on the seeded k-means split, raise `make_month(n=80, n_hot=20)` — the assertion logic stays identical.)
+In `src/beat_snp500/jobs/daily.py`:
+- Replace `from beat_snp500.models.challenger import kmeans_top10` with `from beat_snp500.models.kmeans import kmeans_must_buys` and add `from beat_snp500.portfolio.weights import conviction_weights` (keep the `equal_weights` import — champion still uses it).
+- In `build_leaderboards`, replace the challenger block (`chall = kmeans_top10(month, ...)` through the `boards["challenger"] = ...` assignment) and the shared writer loop with: champion keeps its exact current payload written to `leaderboard_champion.json`; kmeans gets the new payload:
 
-- [ ] **Step 5: Commit**
+```python
+def build_leaderboards(panel: pd.DataFrame, booster, out_dir, as_of,
+                       n_picks: int = config.N_PICKS) -> dict:
+    latest = panel.index.get_level_values("date").max()
+    month = panel.xs(latest, level="date")
+    feats = month[config.FEATURES]
+    boards = {}
+    if booster is not None:
+        scores = pd.Series(booster.predict(feats), index=feats.index)
+        ranked = scores.nlargest(n_picks)
+        atomic_write_json({
+            "as_of": str(pd.Timestamp(as_of).date()),
+            "signal_month": str(latest.date()),
+            "picks": [
+                {"ticker": t, "score": float(v),
+                 "features": {k: float(feats.loc[t, k]) for k in config.FEATURES}}
+                for t, v in ranked.items()
+            ],
+        }, Path(out_dir) / "leaderboard_champion.json")
+        boards["champion"] = ranked
+    sig = kmeans_must_buys(month)
+    weights = conviction_weights(sig) if sig else {}
+    atomic_write_json({
+        "as_of": str(pd.Timestamp(as_of).date()),
+        "signal_month": str(latest.date()),
+        "status": "active" if weights else "hold",
+        "picks": [
+            {"ticker": t, "weight": float(weights[t]), "score": float(sig[t]),
+             "features": {k: float(feats.loc[t, k]) for k in config.FEATURES}}
+            for t in sorted(weights, key=weights.get, reverse=True)
+        ],
+    }, Path(out_dir) / "leaderboard_kmeans.json")
+    boards["kmeans"] = weights
+    return boards
+```
+
+- In `monthly_rebalance`, replace the `selections = {...}` dict and its writer loop with (champion path byte-for-byte equivalent to today; kmeans on conviction weights):
+
+```python
+    month = panel_completed.xs(latest, level="date")
+    scores = pd.Series(model.predict(month[config.FEATURES]), index=month.index)
+    champ = scores.nlargest(config.N_PICKS).index.tolist()
+    if len(champ) == config.N_PICKS:
+        atomic_write_json(
+            {"signal_date": str(latest.date()),
+             "generated_at": str(pd.Timestamp(as_of).date()),
+             "weights": equal_weights(champ)},
+            Path(out_dir) / "holdings_champion.json")
+    sig = kmeans_must_buys(month)
+    if sig:  # hold months keep the previous holdings_kmeans.json in force
+        atomic_write_json(
+            {"signal_date": str(latest.date()),
+             "generated_at": str(pd.Timestamp(as_of).date()),
+             "weights": conviction_weights(sig)},
+            Path(out_dir) / "holdings_kmeans.json")
+```
+
+- In `run()`, change the holdings loop to `for name in ["champion", "kmeans"]:`.
+
+In `scripts/sanity_check_cluster_momentum.py`, change `from beat_snp500.models.challenger import MOM_COLS` to `from beat_snp500.models.kmeans import MOM_COLS`.
+
+- [ ] **Step 5: Run tests + grep**
+
+Run: `.venv/bin/python -m pytest tests/ -q` — all pass.
+Run: `grep -rn "challenger\|kmeans_top10" src/ scripts/ tests/ --include="*.py"` — no hits (comments included).
+(If the seeded `test_must_buys_capped_at_max_picks` is flaky on the k-means split, raise `make_month(n=80, n_hot=20)` — assertions stay identical.)
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/beat_snp500/models/kmeans.py tests/test_kmeans.py
-git commit -m "feat(kmeans): variable-count must-buy selection with conviction weights"
+git add -A src/ scripts/ tests/
+git commit -m "refactor(kmeans): rename challenger to kmeans with variable-count must-buy selection"
 ```
 
 ---
 
-### Task 3: LightGBM must-buy model (`models/lgbm.py`)
+### Task 4: LightGBM must-buy model + all its consumers (rename complete)
 
 **Files:**
-- Create: `src/beat_snp500/models/lgbm.py` (evolved copy of `models/champion.py`; champion.py is untouched until Task 6)
-- Test: `tests/test_lgbm.py`
+- Rename: `git mv src/beat_snp500/models/champion.py src/beat_snp500/models/lgbm.py` (then edit)
+- Rename: `git mv tests/test_champion.py tests/test_lgbm.py` (then rewrite)
+- Modify: `src/beat_snp500/jobs/backtest_report.py`, `src/beat_snp500/jobs/daily.py`, `src/beat_snp500/config.py` (remove `N_PICKS`), `scripts/sanity_check_feature_ic.py` / `scripts/sanity_check_linear.py` (import fixes if they reference `models.champion`), `tests/test_daily.py`, `tests/test_backtest_report.py`
 
 **Interfaces:**
-- Consumes: `conviction_weights` (Task 1), `config.MUST_BUY_Z_LGBM/MIN_PICKS/MAX_PICKS`.
-- Produces: everything `champion.py` exported, renamed where noted — `LGB_PARAMS`, `CANDIDATE_PARAMS`, `spearman_ic(scores, fwd)`, `decile_spread(scores, fwd)`, `select_params(panel, train_window, val_months)`, `walk_forward_scores(panel, train_window, params)`, `train_lgbm(labeled_panel, train_window, params) -> (model, val_ic)` (was `train_champion`), `save_model(model, path)`, `load_model(path)`, plus new `lgbm_must_buys(scores_month: pd.Series, threshold=config.MUST_BUY_Z_LGBM, min_picks=config.MIN_PICKS, max_picks=config.MAX_PICKS) -> dict[str, float]` and `lgbm_picks(scores: pd.Series) -> dict[pd.Timestamp, dict[str, float]]` (replaces `champion_picks`).
+- Consumes: `conviction_weights` (T1), dict-form `n_picks` (T2), `kmeans_must_buys`/`kmeans_picks` (T3), `config.CHAMPION/MUST_BUY_Z_LGBM/MIN_PICKS/MAX_PICKS`.
+- Produces: everything `champion.py` exported, renamed where noted — `LGB_PARAMS`, `CANDIDATE_PARAMS`, `spearman_ic(scores, fwd)`, `decile_spread(scores, fwd)`, `select_params(panel, train_window, val_months)`, `walk_forward_scores(panel, train_window, params)`, `train_lgbm(labeled_panel, train_window, params) -> (model, val_ic)` (was `train_champion`), `save_model`, `load_model`, plus new `lgbm_must_buys(scores_month: pd.Series, threshold=config.MUST_BUY_Z_LGBM, min_picks=config.MIN_PICKS, max_picks=config.MAX_PICKS) -> dict[str, float]` and `lgbm_picks(scores: pd.Series) -> dict[pd.Timestamp, dict[str, float]]` (replaces `champion_picks`). Final series set `kmeans/lgbm/kmeans_ms/lgbm_ms/spy`; registry `type: "lgbm"`, `model_id: f"lgbm_{YYYYMM}"`; `leaderboard_lgbm.json`/`holdings_lgbm.json` on the Task 3 payload shape; `build_leaderboards(panel, booster, out_dir, as_of)` loses its `n_picks` parameter; `config.N_PICKS` is gone.
 
-- [ ] **Step 1: Write the failing tests** — create `tests/test_lgbm.py`:
+- [ ] **Step 1: Rename the module and test files**
+
+```bash
+git mv src/beat_snp500/models/champion.py src/beat_snp500/models/lgbm.py
+git mv tests/test_champion.py tests/test_lgbm.py
+```
+
+- [ ] **Step 2: Write the failing tests** — replace the entire contents of `tests/test_lgbm.py` with:
 
 ```python
 import pandas as pd
@@ -365,6 +577,14 @@ def test_walk_forward_learns_planted_signal(make_panel):
     assert spearman_ic(scores, panel["fwd_return_1m"]).mean() > 0.8
 
 
+def test_scores_only_after_first_window(make_panel):
+    panel = make_panel(n_months=20)
+    scores = walk_forward_scores(panel, train_window=12)
+    first_scored = scores.index.get_level_values("date").min()
+    all_months = panel.index.get_level_values("date").unique().sort_values()
+    assert first_scored == all_months[12]
+
+
 def test_lgbm_picks_weights_valid(make_panel):
     panel = make_panel(n_months=20, n_tickers=30)
     scores = walk_forward_scores(panel, train_window=12)
@@ -388,134 +608,11 @@ def test_train_save_load_roundtrip(make_panel, tmp_path):
     assert len(booster.predict(month[config.FEATURES])) == len(month)
 ```
 
-- [ ] **Step 2: Run to verify failure**
+Update the consumer tests to the final shape:
 
-Run: `.venv/bin/python -m pytest tests/test_lgbm.py -q`
-Expected: ModuleNotFoundError — `beat_snp500.models.lgbm`.
-
-- [ ] **Step 3: Implement.** Copy `src/beat_snp500/models/champion.py` to `src/beat_snp500/models/lgbm.py` (`cp`, not `git mv` — champion.py must keep working until Task 6), then in the new file:
-
-1. Add the import: `from beat_snp500.portfolio.weights import conviction_weights`.
-2. Rename `train_champion` → `train_lgbm` (body unchanged).
-3. Delete `champion_picks` and add:
+`tests/test_backtest_report.py::test_run_report_writes_artifacts` — replace the Task 3 transitional assertions with the final ones:
 
 ```python
-def lgbm_must_buys(scores_month: pd.Series,
-                   threshold: float = config.MUST_BUY_Z_LGBM,
-                   min_picks: int = config.MIN_PICKS,
-                   max_picks: int = config.MAX_PICKS) -> dict[str, float]:
-    """{ticker: cross-sectional score z} clearing the conviction bar; {} = hold.
-
-    A z-threshold, not a raw predicted-percentile bar: regression predictions
-    compress toward the centre when signal is weak, so a raw 0.9 cut would
-    select ~0 names most months. threshold must stay > 0 (weights need
-    strictly positive signals).
-    """
-    s = scores_month.dropna()
-    sd = s.std(ddof=0)
-    if len(s) < min_picks or sd == 0:
-        return {}
-    z = (s - s.mean()) / sd
-    must = z[z >= threshold].sort_values(ascending=False)
-    if len(must) < min_picks:
-        return {}
-    return must.head(max_picks).to_dict()
-
-
-def lgbm_picks(scores: pd.Series) -> dict:
-    out = {}
-    for t, s in scores.groupby(level="date"):
-        signals = lgbm_must_buys(s.droplevel("date"))
-        if signals:
-            out[t] = conviction_weights(signals)
-    return out
-```
-
-- [ ] **Step 4: Run tests**
-
-Run: `.venv/bin/python -m pytest tests/test_lgbm.py tests/ -q`
-Expected: all pass, including the untouched `test_champion.py`. (If the seeded `test_lgbm_picks_weights_valid` yields zero active months, raise `n_tickers` to 60 — expected active-month rate is high since ~16% of 30 names clear 1σ.)
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/beat_snp500/models/lgbm.py tests/test_lgbm.py
-git commit -m "feat(lgbm): z-threshold must-buy selection replacing fixed top-10"
-```
-
----
-
-### Task 4: Count-matched bootstrap
-
-**Files:**
-- Modify: `src/beat_snp500/backtest/bootstrap.py`
-- Test: `tests/test_bootstrap.py`
-
-**Interfaces:**
-- Consumes: nothing new.
-- Produces: `random_portfolio_bootstrap(universe, holding_rets, n_draws=1000, n_picks: int | dict = 10, cost_bps=config.COST_BPS_ONE_WAY, seed=config.SEED) -> dict` — when `n_picks` is a dict keyed by month timestamp, each month draws that month's count.
-
-- [ ] **Step 1: Write the failing test** — append to `tests/test_bootstrap.py`:
-
-```python
-def test_per_month_pick_counts():
-    dates = pd.date_range("2024-01-31", periods=1, freq="ME")
-    tickers = [f"T{i}" for i in range(30)]
-    # 15 winners (+10%), 15 losers (0%). A 1-name draw lands on +10% in ~half
-    # of draws, so p95 == 1.10 iff the per-month count of 1 is respected; the
-    # default 10-name draw's p95 sits far below 1.10 (needs all 10 winners).
-    hr = pd.DataFrame(0.0, index=dates, columns=tickers)
-    hr.iloc[0, :15] = 0.10
-    uni = {t: tickers for t in dates}
-    out = random_portfolio_bootstrap(uni, hr, n_draws=200,
-                                     n_picks={dates[0]: 1}, cost_bps=0.0)
-    assert out["band"]["p95"].iloc[0] == pytest.approx(1.10)
-```
-
-- [ ] **Step 2: Run to verify failure**
-
-Run: `.venv/bin/python -m pytest tests/test_bootstrap.py -q`
-Expected: FAIL — `n_picks` dict is not accepted / TypeError in `min()`.
-
-- [ ] **Step 3: Implement.** In `random_portfolio_bootstrap`, change the signature default `n_picks: int = config.N_PICKS` to `n_picks: int | dict = 10`, and inside the date loop replace `k = min(n_picks, len(rets_t))` with:
-
-```python
-        want = n_picks[t] if isinstance(n_picks, dict) else n_picks
-        k = min(want, len(rets_t))
-```
-
-- [ ] **Step 4: Run tests**
-
-Run: `.venv/bin/python -m pytest tests/test_bootstrap.py tests/ -q
-`
-Expected: all pass (existing tests use the int form, unchanged behavior).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/beat_snp500/backtest/bootstrap.py tests/test_bootstrap.py
-git commit -m "feat(bootstrap): count-matched random portfolios for variable pick counts"
-```
-
----
-
-### Task 5: Backtest report on the new models
-
-**Files:**
-- Modify: `src/beat_snp500/jobs/backtest_report.py`
-- Test: `tests/test_backtest_report.py`
-
-**Interfaces:**
-- Consumes: `kmeans_picks` (T2), `lgbm_picks`/`walk_forward_scores`/`spearman_ic`/`decile_spread` (T3), dict-form `n_picks` (T4), `config.CHAMPION`.
-- Produces: `metrics.json` keyed `kmeans/lgbm/kmeans_ms/lgbm_ms/spy` (+ `yearly`, `turnover`, `survivorship`); `picks.json` keyed the same four; `bootstrap_summary.json` still carries `champion_cagr_percentile` (champion resolved via `config.CHAMPION`).
-
-- [ ] **Step 1: Update the test.** In `tests/test_backtest_report.py::test_run_report_writes_artifacts` replace the assertions after `metrics = run_report(...)` from the metrics-series check to the end of the function with:
-
-```python
-    for f in ["equity_curves.parquet", "metrics.json", "ic_monthly.parquet",
-              "bootstrap.parquet", "bootstrap_summary.json", "survivorship.parquet",
-              "picks.json"]:
-        assert (tmp_path / f).exists(), f
     m = read_json(tmp_path / "metrics.json")
     for series in ["kmeans", "lgbm", "spy"]:
         assert "cagr" in m[series]
@@ -534,87 +631,7 @@ git commit -m "feat(bootstrap): count-matched random portfolios for variable pic
             assert max(weights.values()) <= 0.20 + 1e-9
 ```
 
-(The old `ic_months` length-vs-picks relation no longer holds: lgbm may hold some months, so picks months are a subset of scored months.)
-
-- [ ] **Step 2: Run to verify failure**
-
-Run: `.venv/bin/python -m pytest tests/test_backtest_report.py -q`
-Expected: FAIL — metrics.json still keyed champion/challenger.
-
-- [ ] **Step 3: Implement.** In `src/beat_snp500/jobs/backtest_report.py`:
-
-Replace the model imports:
-
-```python
-from beat_snp500.models.kmeans import kmeans_picks
-from beat_snp500.models.lgbm import (decile_spread, lgbm_picks, spearman_ic,
-                                      walk_forward_scores)
-```
-
-Replace the picks block and `start` line:
-
-```python
-    picks = {
-        "lgbm": lgbm_picks(scores),
-        "kmeans": kmeans_picks(panel),
-    }
-    picks["lgbm_ms"] = _with_max_sharpe(picks["lgbm"], close)
-    picks["kmeans_ms"] = _with_max_sharpe(picks["kmeans"], close)
-
-    results = {name: run_backtest(p, close) for name, p in picks.items()}
-    # common reporting window starts where walk-forward lgbm can first trade
-    start = results["lgbm"].daily_returns.index.min()
-```
-
-Replace the bootstrap block (`champ_months` through `boot_summary`):
-
-```python
-    champ = config.CHAMPION
-    # clip to the common reporting window so the random band matches the chart
-    champ_months = [t for t in sorted(picks[champ])
-                    if t >= start - pd.offsets.MonthEnd(1)]
-    universe = {t: panel.xs(t, level="date").index.tolist() for t in champ_months}
-    counts = {t: len(picks[champ][t]) for t in champ_months}
-    boot = random_portfolio_bootstrap(
-        universe, monthly_holding_returns(close, champ_months),
-        n_draws=n_draws, n_picks=counts)
-    champ_cagr = metrics[champ]["cagr"]
-    boot_summary = {
-        "cagr_p05": float(np.quantile(boot["cagr"], 0.05)),
-        "cagr_p50": float(np.quantile(boot["cagr"], 0.50)),
-        "cagr_p95": float(np.quantile(boot["cagr"], 0.95)),
-        "champion_cagr_percentile": float((boot["cagr"] < champ_cagr).mean()),
-    }
-```
-
-- [ ] **Step 4: Run tests**
-
-Run: `.venv/bin/python -m pytest tests/test_backtest_report.py tests/ -q`
-Expected: all pass.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/beat_snp500/jobs/backtest_report.py tests/test_backtest_report.py
-git commit -m "feat(report): backtest on must-buy portfolios; kmeans/lgbm series; champion-role bootstrap"
-```
-
----
-
-### Task 6: Daily job on the new models; delete the old modules
-
-**Files:**
-- Modify: `src/beat_snp500/jobs/daily.py`, `src/beat_snp500/config.py` (remove `N_PICKS`), `scripts/sanity_check_cluster_momentum.py`, `scripts/sanity_check_feature_ic.py`, `scripts/sanity_check_linear.py` (import fixes only)
-- Delete: `src/beat_snp500/models/challenger.py`, `src/beat_snp500/models/champion.py`, `tests/test_challenger.py`, `tests/test_champion.py`
-- Test: `tests/test_daily.py`
-
-**Interfaces:**
-- Consumes: `kmeans_must_buys` (T2), `lgbm_must_buys`/`train_lgbm`/`save_model`/`load_model` (T3), `conviction_weights` (T1).
-- Produces: `data/outputs/leaderboard_kmeans.json` / `leaderboard_lgbm.json` with payload `{"as_of", "signal_month", "status": "active"|"hold", "picks": [{"ticker", "weight", "score", "features"}]}` (picks sorted by weight desc; empty on hold); `holdings_kmeans.json` / `holdings_lgbm.json` (schema unchanged: `signal_date`, `generated_at`, `weights`); registry entries `type: "lgbm"`, `model_id: f"lgbm_{YYYYMM}"`. `build_leaderboards(panel, booster, out_dir, as_of)` loses its `n_picks` parameter.
-
-- [ ] **Step 1: Update the tests.** In `tests/test_daily.py`:
-
-Replace the imports of `train_champion` with `from beat_snp500.models.lgbm import train_lgbm` (and use it in `test_build_leaderboards`). Then replace the three affected tests:
+`tests/test_daily.py` — replace the import of `train_champion` with `from beat_snp500.models.lgbm import train_lgbm`; change the two live-track fixtures' `holdings = {"champion": ...}` literals to `{"lgbm": ...}`; and replace the three Task 3 versions of the leaderboard/rebalance tests with the final ones:
 
 ```python
 def test_build_leaderboards(make_panel, tmp_path):
@@ -658,25 +675,95 @@ def test_monthly_rebalance_writes_artifacts(make_panel, tmp_path):
     assert any((out_dir / f"holdings_{n}.json").exists() for n in ("lgbm", "kmeans"))
 ```
 
-Also update the two `holdings = {"champion": ...}` literals in the live-track tests to `{"lgbm": ...}` (the function is name-agnostic; this just keeps fixtures honest).
+- [ ] **Step 3: Run to verify failure**
 
-- [ ] **Step 2: Run to verify failure**
+Run: `.venv/bin/python -m pytest tests/test_lgbm.py tests/test_daily.py tests/test_backtest_report.py -q`
+Expected: FAIL — `lgbm.py` still has champion contents; consumers import `models.champion`.
 
-Run: `.venv/bin/python -m pytest tests/test_daily.py -q`
-Expected: FAIL — old leaderboard/holdings names and registry type.
+- [ ] **Step 4: Implement.** In `src/beat_snp500/models/lgbm.py`:
 
-- [ ] **Step 3: Implement.** In `src/beat_snp500/jobs/daily.py`:
-
-Replace model imports:
+1. Add `from beat_snp500.portfolio.weights import conviction_weights`.
+2. Rename `train_champion` → `train_lgbm` (body unchanged).
+3. Delete `champion_picks` and add:
 
 ```python
-from beat_snp500.models.kmeans import kmeans_must_buys
-from beat_snp500.models.lgbm import (lgbm_must_buys, load_model, save_model,
-                                      train_lgbm)
-from beat_snp500.portfolio.weights import conviction_weights
+def lgbm_must_buys(scores_month: pd.Series,
+                   threshold: float = config.MUST_BUY_Z_LGBM,
+                   min_picks: int = config.MIN_PICKS,
+                   max_picks: int = config.MAX_PICKS) -> dict[str, float]:
+    """{ticker: cross-sectional score z} clearing the conviction bar; {} = hold.
+
+    A z-threshold, not a raw predicted-percentile bar: regression predictions
+    compress toward the centre when signal is weak, so a raw 0.9 cut would
+    select ~0 names most months. threshold must stay > 0 (weights need
+    strictly positive signals).
+    """
+    s = scores_month.dropna()
+    sd = s.std(ddof=0)
+    if len(s) < min_picks or sd == 0:
+        return {}
+    z = (s - s.mean()) / sd
+    must = z[z >= threshold].sort_values(ascending=False)
+    if len(must) < min_picks:
+        return {}
+    return must.head(max_picks).to_dict()
+
+
+def lgbm_picks(scores: pd.Series) -> dict:
+    out = {}
+    for t, s in scores.groupby(level="date"):
+        signals = lgbm_must_buys(s.droplevel("date"))
+        if signals:
+            out[t] = conviction_weights(signals)
+    return out
 ```
 
-(drop the `equal_weights` import). Replace `build_leaderboards` entirely:
+In `src/beat_snp500/jobs/backtest_report.py`:
+
+```python
+from beat_snp500.models.lgbm import (decile_spread, lgbm_picks, spearman_ic,
+                                      walk_forward_scores)
+```
+
+replace the picks block and `start` line:
+
+```python
+    picks = {
+        "lgbm": lgbm_picks(scores),
+        "kmeans": kmeans_picks(panel),
+    }
+    picks["lgbm_ms"] = _with_max_sharpe(picks["lgbm"], close)
+    picks["kmeans_ms"] = _with_max_sharpe(picks["kmeans"], close)
+
+    results = {name: run_backtest(p, close) for name, p in picks.items()}
+    # common reporting window starts where walk-forward lgbm can first trade
+    start = results["lgbm"].daily_returns.index.min()
+```
+
+and replace the bootstrap block (`champ_months` through `boot_summary`):
+
+```python
+    champ = config.CHAMPION
+    # clip to the common reporting window so the random band matches the chart
+    champ_months = [t for t in sorted(picks[champ])
+                    if t >= start - pd.offsets.MonthEnd(1)]
+    universe = {t: panel.xs(t, level="date").index.tolist() for t in champ_months}
+    counts = {t: len(picks[champ][t]) for t in champ_months}
+    boot = random_portfolio_bootstrap(
+        universe, monthly_holding_returns(close, champ_months),
+        n_draws=n_draws, n_picks=counts)
+    champ_cagr = metrics[champ]["cagr"]
+    boot_summary = {
+        "cagr_p05": float(np.quantile(boot["cagr"], 0.05)),
+        "cagr_p50": float(np.quantile(boot["cagr"], 0.50)),
+        "cagr_p95": float(np.quantile(boot["cagr"], 0.95)),
+        "champion_cagr_percentile": float((boot["cagr"] < champ_cagr).mean()),
+    }
+```
+
+In `src/beat_snp500/jobs/daily.py`:
+
+Replace the lgbm-side imports: `from beat_snp500.models.lgbm import lgbm_must_buys, load_model, save_model, train_lgbm`; drop the `equal_weights` import. Replace `build_leaderboards` with the final generic version (drops `n_picks`):
 
 ```python
 def build_leaderboards(panel: pd.DataFrame, booster, out_dir, as_of) -> dict:
@@ -706,21 +793,9 @@ def build_leaderboards(panel: pd.DataFrame, booster, out_dir, as_of) -> dict:
     return boards
 ```
 
-In `monthly_rebalance`, replace from `model, val_ic = ...` through the end with:
+In `monthly_rebalance`: `train_champion` → `train_lgbm`; `model_id = f"lgbm_{latest:%Y%m}"`; registry `"type": "lgbm"`; replace the champion holdings block with the selections loop:
 
 ```python
-    model, val_ic = train_lgbm(labeled, train_window=train_window)
-    latest = panel_completed.index.get_level_values("date").max()
-    model_id = f"lgbm_{latest:%Y%m}"
-    artifact = Path(models_dir) / f"{model_id}.txt"
-    save_model(model, artifact)
-    append_entry(registry_path, {
-        "model_id": model_id, "type": "lgbm",
-        "trained_through": str(labeled.index.get_level_values("date").max().date()),
-        "train_window_months": train_window, "ic_mean": val_ic,
-        "created_at": str(pd.Timestamp(as_of).date()), "artifact": artifact_ref(artifact),
-    })
-
     month = panel_completed.xs(latest, level="date")
     scores = pd.Series(model.predict(month[config.FEATURES]), index=month.index)
     selections = {
@@ -739,23 +814,23 @@ In `monthly_rebalance`, replace from `model, val_ic = ...` through the end with:
 
 In `run()`: `latest_model(config.REGISTRY_JSON, "lgbm")` and `for name in ["lgbm", "kmeans"]:`.
 
-Then: delete `src/beat_snp500/models/challenger.py`, `src/beat_snp500/models/champion.py`, `tests/test_challenger.py`, `tests/test_champion.py`. Remove `N_PICKS = 10` from `config.py`. Fix sanity-script imports: in `scripts/sanity_check_cluster_momentum.py` change `from beat_snp500.models.challenger import MOM_COLS` to `from beat_snp500.models.kmeans import MOM_COLS`; run `grep -n "models.champion\|models.challenger" scripts/*.py` and point any remaining imports at `beat_snp500.models.lgbm` (`spearman_ic`, `decile_spread`, etc. kept their names).
+Remove `N_PICKS = 10` from `src/beat_snp500/config.py`. Run `grep -n "models.champion\|train_champion\|champion_picks" scripts/*.py` and point any hits at `beat_snp500.models.lgbm` / `train_lgbm` (`spearman_ic`, `decile_spread`, `_months`, `_rank_label` keep their names).
 
-- [ ] **Step 4: Run tests + grep for stragglers**
+- [ ] **Step 5: Run tests + grep**
 
-Run: `.venv/bin/python -m pytest tests/ -q` — all pass.
-Run: `grep -rn "N_PICKS\|models.champion\|models.challenger\|champion_picks\|challenger_picks\|kmeans_top10\|train_champion" src/ scripts/ tests/` — no hits.
+Run: `.venv/bin/python -m pytest tests/ -q` — all pass. (If the seeded `test_monthly_rebalance_writes_artifacts` or `test_lgbm_picks_weights_valid` lands on all-hold months, raise the fixture to `n_tickers=60` — assertions stay identical.)
+Run: `grep -rn "N_PICKS\|models.champion\|champion_picks\|train_champion" src/ scripts/ tests/ --include="*.py"` — no hits.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A src/ scripts/ tests/
-git commit -m "refactor(models): retire champion/challenger identities for kmeans/lgbm must-buy models"
+git commit -m "refactor(lgbm): rename champion to lgbm with z-threshold must-buy selection"
 ```
 
 ---
 
-### Task 7: Migration script for stored artifacts
+### Task 5: Migration script for stored artifacts
 
 **Files:**
 - Create: `scripts/migrate_model_names.py`
@@ -831,6 +906,8 @@ challenger -> kmeans (what it is: a K-means momentum-cluster picker)
 
 The champion/challenger *roles* now live in config.CHAMPION. Registry
 model_id and artifact filenames are historical labels and stay untouched.
+
+Run: PYTHONPATH=src .venv/bin/python scripts/migrate_model_names.py
 """
 import sys
 from pathlib import Path
@@ -898,7 +975,7 @@ if __name__ == "__main__":
 
 Run: `.venv/bin/python -m pytest tests/test_migrate.py -q` — pass.
 Run: `PYTHONPATH=src .venv/bin/python scripts/migrate_model_names.py`
-Expected output: `registry changed: True`, `outputs renamed: ['holdings_lgbm.json', 'leaderboard_lgbm.json', 'holdings_kmeans.json', 'leaderboard_kmeans.json']` (order may vary), `live_track changed: True`.
+Expected output: `registry changed: True`, `outputs renamed:` listing the four renamed json files (order may vary), `live_track changed: True`.
 Verify: `.venv/bin/python -c "import json; print({e['type'] for e in json.load(open('models/registry.json'))})"` → `{'lgbm'}`.
 
 - [ ] **Step 5: Commit (code + migrated data)**
@@ -910,14 +987,14 @@ git commit -m "data: migrate stored artifacts to kmeans/lgbm identities"
 
 ---
 
-### Task 8: Dashboard PM view + docs copy
+### Task 6: Dashboard PM view + docs copy
 
 **Files:**
 - Modify: `app/streamlit_app.py`, `README.md`
 - Test: `tests/test_app_smoke.py` (unchanged — just must stay green)
 
 **Interfaces:**
-- Consumes: `config.CHAMPION`, leaderboard payload from Task 6, series names from Task 5, migrated files from Task 7.
+- Consumes: `config.CHAMPION`, leaderboard payload from Task 4, series names from Task 4, migrated files from Task 5.
 - Produces: no code interfaces; UI only.
 
 - [ ] **Step 1: Rewire identities.** In `app/streamlit_app.py`:
@@ -981,6 +1058,8 @@ with tab_today:
         st.dataframe(rows, hide_index=True, use_container_width=True)
 ```
 
+Note: the migrated `leaderboard_kmeans.json` / `leaderboard_lgbm.json` on disk still carry the legacy payload (no `status`/`weight` keys) until the next daily run — the `data.get("status")`/`data.get("picks")` guards above must therefore tolerate the legacy shape without crashing (legacy picks lack `weight`; guard with `p.get("weight")` → format only when present, e.g. `f"{p['weight']:.1%}" if "weight" in p else "—"`).
+
 - [ ] **Step 3: Backtest tab tweaks.** In the `tab_bt` block: band trace name → `"random count-matched (5–95%)"`; the turnover metric → `metrics.get("turnover", {}).get(CHAMPION)` labelled `"Champion turnover/mo"`; the bootstrap caption → `f"Champion CAGR sits at the {boot['champion_cagr_percentile']:.0%} percentile of 1,000 random count-matched portfolios (random p50 CAGR {boot['cagr_p50']:.1%})."`; the IC bar colors → `COLORS["lgbm"]` and `COLORS["lgbm_ms"]` (both are lgbm diagnostics).
 
 - [ ] **Step 4: Methodology copy.** In the `tab_method` markdown, replace the Champion/Challenger bullets and the random-benchmark line:
@@ -999,7 +1078,7 @@ with tab_today:
   universe, count-matched to the champion's actual monthly holdings.
 ```
 
-Update `README.md`'s Champion/Challenger bullets (lines ~10-12) to the same effect. Also fix the stale hint in `app/streamlit_app.py`'s `tab_bt` info message if present (`run_backtest.py` reference is fine).
+Update `README.md`'s Champion/Challenger bullets (lines ~10-12) to the same effect.
 
 - [ ] **Step 5: Verify + commit**
 
@@ -1013,7 +1092,7 @@ git commit -m "feat(app): portfolio-manager view with % allocations and champion
 
 ---
 
-### Task 9: Advanced features (residual / vol-scaled / cluster-relative momentum)
+### Task 7: Advanced features (residual / vol-scaled / cluster-relative momentum)
 
 **Files:**
 - Create: `src/beat_snp500/features/advanced.py`
@@ -1021,8 +1100,8 @@ git commit -m "feat(app): portfolio-manager view with % allocations and champion
 - Test: `tests/test_advanced_features.py`
 
 **Interfaces:**
-- Consumes: `cluster_month` (T2), `BETA_COLS`/`FACTOR_COLS` from `features/betas.py`, conftest `make_panel`.
-- Produces: `vol_scaled_momentum(monthly) -> pd.Series` named `mom_vol_scaled`; `residual_momentum(monthly, factors, window=12) -> pd.Series` named `resid_mom` (sum/std of FF5 residual returns over months t-11..t-1, skipping month t); `cluster_relative_momentum(panel) -> pd.DataFrame` with columns `return_3m_cz`, `return_6m_cz`, `return_12m_cz` (within-cluster z per month). `walk_forward_scores(..., feature_cols: list[str] | None = None)` (also `_fit`, `_score_month`, `select_params`) — `None` means `config.FEATURES`. Candidate columns are **not** added to `config.FEATURES` here; promotion happens in Task 11 only if validated.
+- Consumes: `cluster_month` (T3), `BETA_COLS`/`FACTOR_COLS` from `features/betas.py`, conftest `make_panel`.
+- Produces: `vol_scaled_momentum(monthly) -> pd.Series` named `mom_vol_scaled`; `residual_momentum(monthly, factors, window=12) -> pd.Series` named `resid_mom` (sum/std of FF5 residual returns over months t-11..t-1, skipping month t); `cluster_relative_momentum(panel) -> pd.DataFrame` with columns `return_3m_cz`, `return_6m_cz`, `return_12m_cz` (within-cluster z per month). `walk_forward_scores(..., feature_cols: list[str] | None = None)` (also `_fit`, `_score_month`, `select_params`) — `None` means `config.FEATURES`. Candidate columns are **not** added to `config.FEATURES` here; promotion happens in Task 9 only if validated.
 
 - [ ] **Step 1: Write the failing tests** — create `tests/test_advanced_features.py`:
 
@@ -1189,7 +1268,7 @@ git commit -m "feat(features): residual, vol-scaled, and cluster-relative moment
 
 ---
 
-### Task 10: K-means tuning with dev/holdout protocol
+### Task 8: K-means tuning with dev/holdout protocol
 
 **Files:**
 - Modify: `src/beat_snp500/models/kmeans.py` (parameterize), `src/beat_snp500/config.py` (add `KMEANS_MOM_MODE`, `KMEANS_SELECT_RULE`)
@@ -1223,7 +1302,7 @@ def test_unknown_mode_raises():
         kmeans_must_buys(month, select_rule="nope")
 ```
 
-(`make_month` lacks `gk_vol`/`return_1m` variation? No — it fills *all* `config.FEATURES` columns with noise, so both exist.)
+(`make_month` fills *all* `config.FEATURES` columns with noise, so `return_1m` and `gk_vol` both exist for the new modes.)
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -1374,6 +1453,8 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
+(Note: `kmeans_picks(panel, **cfg)` forwards `threshold=` to `kmeans_must_buys`.)
+
 - [ ] **Step 4: Run tests, then the tuning protocol**
 
 Run: `.venv/bin/python -m pytest tests/test_kmeans.py tests/ -q` — all pass.
@@ -1390,14 +1471,14 @@ git commit -m "feat(kmeans): tunable momentum/cluster-selection modes + dev/hold
 
 ---
 
-### Task 11: Feature evaluation gate
+### Task 9: Feature evaluation gate
 
 **Files:**
 - Create: `scripts/evaluate_features.py`
 - Modify (only on ADOPT): `src/beat_snp500/config.py` (`FEATURES += promoted columns`)
 
 **Interfaces:**
-- Consumes: `walk_forward_scores(..., feature_cols=...)` (T9), `spearman_ic` (T3), `config.BASE_FEATURES/DEV_END`.
+- Consumes: `walk_forward_scores(..., feature_cols=...)` (T7), `spearman_ic` (T4), `config.BASE_FEATURES/DEV_END`.
 - Produces: `data/outputs/tuning/feature_eval.json`; possibly a longer `config.FEATURES`.
 
 - [ ] **Step 1: Create** `scripts/evaluate_features.py`:
@@ -1418,7 +1499,7 @@ import pandas as pd
 from beat_snp500 import config
 from beat_snp500.data.factors import load_ff5
 from beat_snp500.features.pipeline import build_feature_panel
-from beat_snp500.io_utils import atomic_write_json, read_json
+from beat_snp500.io_utils import atomic_write_json
 from beat_snp500.models.lgbm import spearman_ic, walk_forward_scores
 
 CANDIDATE_SETS = {
@@ -1467,7 +1548,7 @@ def main() -> int:
     for name, r in rows.items():
         print(f"{name:18s} mean IC {r['mean_ic']:+.4f}  IR {r['ic_ir']:+.2f}")
     atomic_write_json(rows, REPORT)
-    print(f"\nNext: pick the best non-baseline set, run --holdout <name> ONCE.")
+    print("\nNext: pick the best non-baseline set, run --holdout <name> ONCE.")
     return 0
 
 
@@ -1494,7 +1575,7 @@ git commit -m "feat(features): dev/holdout feature-evaluation gate + verdicts"
 
 ---
 
-### Task 12: Regenerate artifacts + results write-up + final verification
+### Task 10: Regenerate artifacts + results write-up + final verification
 
 **Files:**
 - Modify (by running scripts): `data/outputs/backtest/*`
@@ -1503,20 +1584,20 @@ git commit -m "feat(features): dev/holdout feature-evaluation gate + verdicts"
 - [ ] **Step 1: Regenerate the backtest**
 
 Run: `PYTHONPATH=src .venv/bin/python scripts/run_backtest.py`
-Expected: prints CAGR/Sharpe/MaxDD lines for `kmeans`, `lgbm`, `kmeans_ms`, `lgbm_ms`, `spy` — no champion/challenger keys anywhere.
+Expected: prints CAGR/Sharpe/MaxDD lines for `kmeans`, `lgbm`, `kmeans_ms`, `lgbm_ms` — no champion/challenger keys anywhere.
 
 - [ ] **Step 2: Write `improvement/improve_v2.md`** in the same plain-language style as `improve_v1.md`, with these sections, every number copied from the artifacts just produced (no estimates):
 
 1. **What changed** — must-buy selection (5–10 names, hold below 5), conviction weights with 20% cap, K-means re-rated champion (`config.CHAMPION`), models renamed to what they are.
 2. **New scoreboard** — table of yearly-average return / Sharpe / max drawdown for kmeans, lgbm, SPY from `data/outputs/backtest/metrics.json`, side by side with the fixed-top-10 numbers from the `improve_v1.md` table for context.
-3. **Tuning verdict** — winning config + dev/holdout Sharpe from `data/outputs/tuning/kmeans_tuning.json` and the `--holdout` output captured in Task 10; state ADOPT/KEEP and why.
+3. **Tuning verdict** — winning config + dev/holdout Sharpe from `data/outputs/tuning/kmeans_tuning.json` and the `--holdout` output captured in Task 8; state ADOPT/KEEP and why.
 4. **Feature verdict** — dev/holdout IC table from `data/outputs/tuning/feature_eval.json`; state which (if any) features were promoted.
 5. **Honest caveats** — the threshold/guardrail values were chosen by design, not fitted; variable counts change turnover; results still carry the survivorship caveat from v1.
 
 - [ ] **Step 3: Full verification**
 
 Run: `.venv/bin/python -m pytest tests/ -q` — all pass.
-Run: `grep -rn "champion\|challenger" src/ scripts/ app/ --include="*.py" | grep -v "config.CHAMPION\|CHAMPION\|Challenger\b"` — remaining hits must be role-pointer usages or prose, never identity keys.
+Run: `grep -rn "champion\|challenger" src/ scripts/ app/ --include="*.py" | grep -v "CHAMPION\|Challenger"` — remaining hits must be role-pointer usages or prose, never identity keys.
 Run: `.venv/bin/streamlit run app/streamlit_app.py --server.headless true` — loads with the regenerated data (Ctrl-C after confirming).
 
 - [ ] **Step 4: Commit**
@@ -1530,7 +1611,7 @@ git commit -m "data: regenerate backtest under must-buy selection; add round-2 w
 
 ## Self-Review Notes (already applied)
 
-- Spec §1 → T2/T3; §2 → T1 (+bootstrap fairness T4); §3 → T5/T6/T7/T8; §4a → T10; §4b → T9/T11; §5 → T8/T12; hygiene item is a verified no-op (duplicates only in `.venv`).
-- `N_PICKS` removal deferred to T6 (bootstrap keeps a literal default 10; daily/models drop it there).
-- Old and new model modules coexist T2–T5 so every commit stays green; T6 deletes the old pair.
+- Spec §1 → T3/T4; §2 → T1 (+bootstrap fairness T2); §3 → T3/T4/T5/T6; §4a → T8; §4b → T7/T9; §5 → T6/T10; hygiene item was completed in the improve-v1 round (duplicates already deleted; only `.venv` copies remain).
+- No transitional duplicate modules (explicit project decision 2026-07-11): each rename is `git mv` + all consumers fixed in the same task. Task 3 leaves the lgbm side transitionally under its old `champion` name; Task 4 finishes.
+- `N_PICKS` removal happens in T4 (bootstrap default becomes a literal 10 in T2; the last champion-side references die in T4).
 - Contingencies for seeded-randomness flakes are stated inside the affected steps (fixture sizes only, assertions never weaken).
