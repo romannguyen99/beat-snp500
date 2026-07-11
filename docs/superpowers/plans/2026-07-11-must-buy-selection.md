@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Run all tests with `.venv/bin/python -m pytest` (pytest `pythonpath=["src"]` handles imports; the editable-install `.pth` is unreliable on this machine — never rely on `pip install -e` imports outside pytest).
+- Run all tests with `.venv/bin/python -m pytest` (pytest `pythonpath=["src"]` handles imports). The editable-install `.pth` is hidden-flagged by the local sandbox and Python 3.13 silently skips it, so **every script run must be prefixed with `PYTHONPATH=src`**, e.g. `PYTHONPATH=src .venv/bin/python scripts/tune_kmeans.py` — otherwise `import beat_snp500` fails outside pytest.
 - pandas must stay `>=2.2,<3.0`; do not bump dependencies.
 - Git commits: conventional prefixes matching repo history (`feat:`, `fix:`, `docs:`, `data:`, `test:`, `refactor:`). **Never add a `Co-Authored-By` trailer — commits must show only Roman as author.**
 - Config values, verbatim from the spec: `MIN_PICKS = 5`, `MAX_PICKS = 10`, `WEIGHT_CAP = 0.20`, `MUST_BUY_Z_KMEANS = 0.0`, `MUST_BUY_Z_LGBM = 1.0`, `CHAMPION = "kmeans"`, `DEV_END = "2019-12-31"`.
@@ -459,19 +459,17 @@ git commit -m "feat(lgbm): z-threshold must-buy selection replacing fixed top-10
 
 ```python
 def test_per_month_pick_counts():
-    dates = pd.date_range("2024-01-31", periods=2, freq="ME")
+    dates = pd.date_range("2024-01-31", periods=1, freq="ME")
     tickers = [f"T{i}" for i in range(30)]
-    # month 1: winners return 10%, rest 0%; a 5-name draw can average up to
-    # 10% while a 10-name draw of the same names caps at 5% -- the band
-    # widths differ iff the per-month count is respected
+    # 15 winners (+10%), 15 losers (0%). A 1-name draw lands on +10% in ~half
+    # of draws, so p95 == 1.10 iff the per-month count of 1 is respected; the
+    # default 10-name draw's p95 sits far below 1.10 (needs all 10 winners).
     hr = pd.DataFrame(0.0, index=dates, columns=tickers)
-    hr.iloc[0, :5] = 0.10
+    hr.iloc[0, :15] = 0.10
     uni = {t: tickers for t in dates}
-    counts = {dates[0]: 5, dates[1]: 10}
-    out = random_portfolio_bootstrap(uni, hr, n_draws=500, n_picks=counts,
-                                     cost_bps=0.0)
-    # p95 of month-1 equity exceeds anything a 10-name portfolio could reach
-    assert out["band"]["p95"].iloc[0] > 1.05 + 1e-9
+    out = random_portfolio_bootstrap(uni, hr, n_draws=200,
+                                     n_picks={dates[0]: 1}, cost_bps=0.0)
+    assert out["band"]["p95"].iloc[0] == pytest.approx(1.10)
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -899,7 +897,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run tests, then run the migration for real**
 
 Run: `.venv/bin/python -m pytest tests/test_migrate.py -q` — pass.
-Run: `.venv/bin/python scripts/migrate_model_names.py`
+Run: `PYTHONPATH=src .venv/bin/python scripts/migrate_model_names.py`
 Expected output: `registry changed: True`, `outputs renamed: ['holdings_lgbm.json', 'leaderboard_lgbm.json', 'holdings_kmeans.json', 'leaderboard_kmeans.json']` (order may vary), `live_track changed: True`.
 Verify: `.venv/bin/python -c "import json; print({e['type'] for e in json.load(open('models/registry.json'))})"` → `{'lgbm'}`.
 
@@ -1277,8 +1275,8 @@ holdout (months > DEV_END). Spec: docs/superpowers/specs/
 2026-07-10-must-buy-selection-design.md §4a. Run time: several minutes.
 
 Usage:
-    .venv/bin/python scripts/tune_kmeans.py            # dev-period grid
-    .venv/bin/python scripts/tune_kmeans.py --holdout  # winner vs current, once
+    PYTHONPATH=src .venv/bin/python scripts/tune_kmeans.py            # dev-period grid
+    PYTHONPATH=src .venv/bin/python scripts/tune_kmeans.py --holdout  # winner vs current, once
 """
 import argparse
 
@@ -1379,8 +1377,8 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run tests, then the tuning protocol**
 
 Run: `.venv/bin/python -m pytest tests/test_kmeans.py tests/ -q` — all pass.
-Run: `.venv/bin/python scripts/tune_kmeans.py` (several minutes; writes the report).
-Run: `.venv/bin/python scripts/tune_kmeans.py --holdout` — exactly once.
+Run: `PYTHONPATH=src .venv/bin/python scripts/tune_kmeans.py` (several minutes; writes the report).
+Run: `PYTHONPATH=src .venv/bin/python scripts/tune_kmeans.py --holdout` — exactly once.
 If verdict is **ADOPT**: set `K_CLUSTERS`, `KMEANS_MOM_MODE`, `KMEANS_SELECT_RULE`, `MUST_BUY_Z_KMEANS` in `config.py` to the winner's values and rerun `.venv/bin/python -m pytest tests/ -q` (seeded k-means tests may need their fixture sizes nudged if k changed — keep assertions identical). If **KEEP**: change nothing.
 
 - [ ] **Step 5: Commit (code, report, and any adopted config)**
@@ -1410,8 +1408,8 @@ promoted into config.FEATURES only if it improves LightGBM's dev-period
 walk-forward IC and does not degrade on the single holdout pass.
 
 Usage:
-    .venv/bin/python scripts/evaluate_features.py                 # dev table
-    .venv/bin/python scripts/evaluate_features.py --holdout NAME  # once
+    PYTHONPATH=src .venv/bin/python scripts/evaluate_features.py                 # dev table
+    PYTHONPATH=src .venv/bin/python scripts/evaluate_features.py --holdout NAME  # once
 """
 import argparse
 
@@ -1479,7 +1477,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: Run the dev table**
 
-Run: `.venv/bin/python scripts/evaluate_features.py` (walk-forward × 5 sets — allow ~10–20 minutes).
+Run: `PYTHONPATH=src .venv/bin/python scripts/evaluate_features.py` (walk-forward × 5 sets — allow ~10–20 minutes).
 
 - [ ] **Step 3: One holdout pass.** If a candidate set clearly beats baseline mean IC on dev (a lift that survives eyeballing the IR, not a fourth-decimal tie), run `--holdout <name>` once. **ADOPT** (append its columns to `config.FEATURES` in `config.py`, with a comment citing the report) only if it also beats baseline on holdout; otherwise **KEEP** and record that.
 
@@ -1504,7 +1502,7 @@ git commit -m "feat(features): dev/holdout feature-evaluation gate + verdicts"
 
 - [ ] **Step 1: Regenerate the backtest**
 
-Run: `.venv/bin/python scripts/run_backtest.py`
+Run: `PYTHONPATH=src .venv/bin/python scripts/run_backtest.py`
 Expected: prints CAGR/Sharpe/MaxDD lines for `kmeans`, `lgbm`, `kmeans_ms`, `lgbm_ms`, `spy` — no champion/challenger keys anywhere.
 
 - [ ] **Step 2: Write `improvement/improve_v2.md`** in the same plain-language style as `improve_v1.md`, with these sections, every number copied from the artifacts just produced (no estimates):
