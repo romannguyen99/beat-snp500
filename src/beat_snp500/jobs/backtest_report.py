@@ -10,9 +10,9 @@ from beat_snp500.backtest.metrics import perf_metrics, yearly_returns
 from beat_snp500.data.prices import close_matrix
 from beat_snp500.features.pipeline import build_feature_panel
 from beat_snp500.io_utils import atomic_write_json, atomic_write_parquet
-from beat_snp500.models.champion import (champion_picks, decile_spread,
-                                          spearman_ic, walk_forward_scores)
 from beat_snp500.models.kmeans import kmeans_picks
+from beat_snp500.models.lgbm import (decile_spread, lgbm_picks, spearman_ic,
+                                      walk_forward_scores)
 from beat_snp500.portfolio.weights import max_sharpe_weights
 
 
@@ -53,14 +53,15 @@ def run_report(prices: pd.DataFrame, membership: pd.DataFrame, factors: pd.DataF
     ic = spearman_ic(scores, panel["fwd_return_1m"])
     spread = decile_spread(scores, panel["fwd_return_1m"])
     picks = {
-        "champion": champion_picks(scores),
+        "lgbm": lgbm_picks(scores),
         "kmeans": kmeans_picks(panel),
     }
-    picks["champion_ms"] = _with_max_sharpe(picks["champion"], close)
+    picks["lgbm_ms"] = _with_max_sharpe(picks["lgbm"], close)
     picks["kmeans_ms"] = _with_max_sharpe(picks["kmeans"], close)
 
     results = {name: run_backtest(p, close) for name, p in picks.items()}
-    start = results["champion"].daily_returns.index.min()
+    # common reporting window starts where walk-forward lgbm can first trade
+    start = results["lgbm"].daily_returns.index.min()
 
     rf_annual = float((1 + factors["rf"]).prod() ** (12 / len(factors)) - 1)
     daily = {name: res.daily_returns for name, res in results.items()}
@@ -83,11 +84,16 @@ def run_report(prices: pd.DataFrame, membership: pd.DataFrame, factors: pd.DataF
         "max_missing_frac": float(surv["missing_frac"].max()) if len(surv) else float("nan"),
     }
 
-    champ_months = sorted(picks["champion"])
+    champ = config.CHAMPION
+    # clip to the common reporting window so the random band matches the chart
+    champ_months = [t for t in sorted(picks[champ])
+                    if t >= start - pd.offsets.MonthEnd(1)]
     universe = {t: panel.xs(t, level="date").index.tolist() for t in champ_months}
+    counts = {t: len(picks[champ][t]) for t in champ_months}
     boot = random_portfolio_bootstrap(
-        universe, monthly_holding_returns(close, champ_months), n_draws=n_draws)
-    champ_cagr = metrics["champion"]["cagr"]
+        universe, monthly_holding_returns(close, champ_months),
+        n_draws=n_draws, n_picks=counts)
+    champ_cagr = metrics[champ]["cagr"]
     boot_summary = {
         "cagr_p05": float(np.quantile(boot["cagr"], 0.05)),
         "cagr_p50": float(np.quantile(boot["cagr"], 0.50)),

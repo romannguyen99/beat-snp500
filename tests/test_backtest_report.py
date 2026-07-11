@@ -19,7 +19,7 @@ def test_run_report_writes_artifacts(make_prices, make_factors, make_membership,
               "picks.json"]:
         assert (tmp_path / f).exists(), f
     m = read_json(tmp_path / "metrics.json")
-    for series in ["kmeans", "champion", "spy"]:
+    for series in ["kmeans", "lgbm", "spy"]:
         assert "cagr" in m[series]
     assert "champion_cagr_percentile" in read_json(tmp_path / "bootstrap_summary.json")
     assert "survivorship" in m
@@ -27,12 +27,13 @@ def test_run_report_writes_artifacts(make_prices, make_factors, make_membership,
     assert (surv["missing_frac"] == 0).all()
 
     picks_data = read_json(tmp_path / "picks.json")
-    assert set(picks_data) == {"kmeans", "champion", "kmeans_ms", "champion_ms"}
-    assert picks_data["kmeans"], "kmeans emitted no months at all"
-    for weights in picks_data["kmeans"].values():
-        assert 5 <= len(weights) <= 10
-        assert sum(weights.values()) == pytest.approx(1.0)
-        assert max(weights.values()) <= 0.20 + 1e-9
+    assert set(picks_data) == {"kmeans", "lgbm", "kmeans_ms", "lgbm_ms"}
+    for name in ("kmeans", "lgbm"):
+        assert picks_data[name], f"{name} emitted no months at all"
+        for weights in picks_data[name].values():
+            assert 5 <= len(weights) <= 10
+            assert sum(weights.values()) == pytest.approx(1.0)
+            assert max(weights.values()) <= 0.20 + 1e-9
 
 
 def test_survivorship_stats_flags_missing_member():

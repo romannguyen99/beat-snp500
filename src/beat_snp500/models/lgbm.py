@@ -4,7 +4,7 @@ import lightgbm as lgb
 import pandas as pd
 
 from beat_snp500 import config
-from beat_snp500.portfolio.weights import equal_weights
+from beat_snp500.portfolio.weights import conviction_weights
 
 LGB_PARAMS = dict(objective="regression", n_estimators=200, learning_rate=0.05,
                   num_leaves=31, min_child_samples=20, subsample=0.8,
@@ -82,18 +82,40 @@ def walk_forward_scores(panel: pd.DataFrame,
     return pd.concat(out).sort_index() if out else pd.Series(dtype=float)
 
 
-def champion_picks(scores: pd.Series, n_picks: int = config.N_PICKS) -> dict:
+def lgbm_must_buys(scores_month: pd.Series,
+                   threshold: float = config.MUST_BUY_Z_LGBM,
+                   min_picks: int = config.MIN_PICKS,
+                   max_picks: int = config.MAX_PICKS) -> dict[str, float]:
+    """{ticker: cross-sectional score z} clearing the conviction bar; {} = hold.
+
+    A z-threshold, not a raw predicted-percentile bar: regression predictions
+    compress toward the centre when signal is weak, so a raw 0.9 cut would
+    select ~0 names most months. threshold must stay > 0 (weights need
+    strictly positive signals).
+    """
+    s = scores_month.dropna()
+    sd = s.std(ddof=0)
+    if len(s) < min_picks or sd == 0:
+        return {}
+    z = (s - s.mean()) / sd
+    must = z[z >= threshold].sort_values(ascending=False)
+    if len(must) < min_picks:
+        return {}
+    return must.head(max_picks).to_dict()
+
+
+def lgbm_picks(scores: pd.Series) -> dict:
     out = {}
     for t, s in scores.groupby(level="date"):
-        top = s.droplevel("date").nlargest(n_picks)
-        if len(top) == n_picks:
-            out[t] = equal_weights(top.index.tolist())
+        signals = lgbm_must_buys(s.droplevel("date"))
+        if signals:
+            out[t] = conviction_weights(signals)
     return out
 
 
-def train_champion(labeled_panel: pd.DataFrame,
-                   train_window: int = config.TRAIN_WINDOW_MONTHS,
-                   params: dict | None = None):
+def train_lgbm(labeled_panel: pd.DataFrame,
+               train_window: int = config.TRAIN_WINDOW_MONTHS,
+               params: dict | None = None):
     params = params or LGB_PARAMS
     months = _months(labeled_panel)[-train_window:]
     model = _fit(labeled_panel, months, params)

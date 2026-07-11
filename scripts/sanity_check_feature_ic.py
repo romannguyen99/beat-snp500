@@ -7,7 +7,7 @@ import pandas as pd
 from beat_snp500 import config
 from beat_snp500.data.factors import load_ff5
 from beat_snp500.features.pipeline import build_feature_panel
-from beat_snp500.models.champion import spearman_ic
+from beat_snp500.models.lgbm import spearman_ic
 
 
 def main() -> int:

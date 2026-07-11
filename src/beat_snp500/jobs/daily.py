@@ -11,10 +11,10 @@ from beat_snp500.data.prices import close_matrix, update_price_cache
 from beat_snp500.data.validation import validate_prices
 from beat_snp500.features.pipeline import build_feature_panel
 from beat_snp500.io_utils import atomic_write_json, atomic_write_parquet, read_json
-from beat_snp500.models.champion import load_model, save_model, train_champion
 from beat_snp500.models.kmeans import kmeans_must_buys
+from beat_snp500.models.lgbm import lgbm_must_buys, load_model, save_model, train_lgbm
 from beat_snp500.models.registry import append_entry, latest_model
-from beat_snp500.portfolio.weights import conviction_weights, equal_weights
+from beat_snp500.portfolio.weights import conviction_weights
 
 TRACK_COLS = ["date", "model", "ret", "spy_ret"]
 
@@ -37,38 +37,30 @@ def is_first_weekday(d: pd.Timestamp) -> bool:
     return d.normalize() == first
 
 
-def build_leaderboards(panel: pd.DataFrame, booster, out_dir, as_of,
-                       n_picks: int = config.N_PICKS) -> dict:
+def build_leaderboards(panel: pd.DataFrame, booster, out_dir, as_of) -> dict:
     latest = panel.index.get_level_values("date").max()
     month = panel.xs(latest, level="date")
     feats = month[config.FEATURES]
-    boards = {}
+    signals = {}
     if booster is not None:
         scores = pd.Series(booster.predict(feats), index=feats.index)
-        ranked = scores.nlargest(n_picks)
-        atomic_write_json({
+        signals["lgbm"] = lgbm_must_buys(scores)
+    signals["kmeans"] = kmeans_must_buys(month)
+    boards = {}
+    for model, sig in signals.items():
+        weights = conviction_weights(sig) if sig else {}
+        payload = {
             "as_of": str(pd.Timestamp(as_of).date()),
             "signal_month": str(latest.date()),
+            "status": "active" if weights else "hold",
             "picks": [
-                {"ticker": t, "score": float(v),
+                {"ticker": t, "weight": float(weights[t]), "score": float(sig[t]),
                  "features": {k: float(feats.loc[t, k]) for k in config.FEATURES}}
-                for t, v in ranked.items()
+                for t in sorted(weights, key=weights.get, reverse=True)
             ],
-        }, Path(out_dir) / "leaderboard_champion.json")
-        boards["champion"] = ranked
-    sig = kmeans_must_buys(month)
-    weights = conviction_weights(sig) if sig else {}
-    atomic_write_json({
-        "as_of": str(pd.Timestamp(as_of).date()),
-        "signal_month": str(latest.date()),
-        "status": "active" if weights else "hold",
-        "picks": [
-            {"ticker": t, "weight": float(weights[t]), "score": float(sig[t]),
-             "features": {k: float(feats.loc[t, k]) for k in config.FEATURES}}
-            for t in sorted(weights, key=weights.get, reverse=True)
-        ],
-    }, Path(out_dir) / "leaderboard_kmeans.json")
-    boards["kmeans"] = weights
+        }
+        atomic_write_json(payload, Path(out_dir) / f"leaderboard_{model}.json")
+        boards[model] = weights
     return boards
 
 
@@ -111,13 +103,13 @@ def update_live_track(close: pd.DataFrame, holdings: dict, track_path, as_of) ->
 def monthly_rebalance(panel_completed: pd.DataFrame, models_dir, out_dir, registry_path,
                       as_of, train_window: int = config.TRAIN_WINDOW_MONTHS) -> None:
     labeled = panel_completed.dropna(subset=["fwd_return_1m"])
-    model, val_ic = train_champion(labeled, train_window=train_window)
+    model, val_ic = train_lgbm(labeled, train_window=train_window)
     latest = panel_completed.index.get_level_values("date").max()
-    model_id = f"champion_{latest:%Y%m}"
+    model_id = f"lgbm_{latest:%Y%m}"
     artifact = Path(models_dir) / f"{model_id}.txt"
     save_model(model, artifact)
     append_entry(registry_path, {
-        "model_id": model_id, "type": "champion",
+        "model_id": model_id, "type": "lgbm",
         "trained_through": str(labeled.index.get_level_values("date").max().date()),
         "train_window_months": train_window, "ic_mean": val_ic,
         "created_at": str(pd.Timestamp(as_of).date()), "artifact": artifact_ref(artifact),
@@ -125,20 +117,18 @@ def monthly_rebalance(panel_completed: pd.DataFrame, models_dir, out_dir, regist
 
     month = panel_completed.xs(latest, level="date")
     scores = pd.Series(model.predict(month[config.FEATURES]), index=month.index)
-    champ = scores.nlargest(config.N_PICKS).index.tolist()
-    if len(champ) == config.N_PICKS:
-        atomic_write_json(
-            {"signal_date": str(latest.date()),
-             "generated_at": str(pd.Timestamp(as_of).date()),
-             "weights": equal_weights(champ)},
-            Path(out_dir) / "holdings_champion.json")
-    sig = kmeans_must_buys(month)
-    if sig:  # hold months keep the previous holdings_kmeans.json in force
+    selections = {
+        "lgbm": lgbm_must_buys(scores),
+        "kmeans": kmeans_must_buys(month),
+    }
+    for name, sig in selections.items():
+        if not sig:
+            continue  # hold: previous holdings_{name}.json stays in force
         atomic_write_json(
             {"signal_date": str(latest.date()),
              "generated_at": str(pd.Timestamp(as_of).date()),
              "weights": conviction_weights(sig)},
-            Path(out_dir) / "holdings_kmeans.json")
+            Path(out_dir) / f"holdings_{name}.json")
 
 
 def run(as_of=None, force_rebalance: bool = False) -> int:
@@ -162,12 +152,12 @@ def run(as_of=None, force_rebalance: bool = False) -> int:
     factors = load_ff5(config.FACTORS_PARQUET)
     panel = build_feature_panel(prices, mem, factors)
 
-    entry = latest_model(config.REGISTRY_JSON, "champion")
+    entry = latest_model(config.REGISTRY_JSON, "lgbm")
     booster = load_model(resolve_artifact(entry["artifact"])) if entry else None
     build_leaderboards(panel, booster, config.OUTPUTS_DIR, as_of)
 
     holdings = {}
-    for name in ["champion", "kmeans"]:
+    for name in ["lgbm", "kmeans"]:
         p = config.OUTPUTS_DIR / f"holdings_{name}.json"
         if p.exists():
             holdings[name] = read_json(p)

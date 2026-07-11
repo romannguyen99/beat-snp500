@@ -1,8 +1,8 @@
-"""Sanity check: does a plain linear model beat champion's ~0 IC on the same
+"""Sanity check: does a plain linear model beat lgbm's ~0 IC on the same
 features/label/walk-forward setup? If Ridge also lands near zero, the ceiling
 is set by the features/label at this horizon, not by LightGBM's complexity.
 
-Mirrors champion.py's methodology exactly (same rank label, same walk-forward
+Mirrors lgbm.py's methodology exactly (same rank label, same walk-forward
 window, same once-at-the-start hyperparam selection) so the resulting IC is
 directly comparable to data/outputs/backtest/ic_monthly.parquet.
 """
@@ -15,7 +15,7 @@ from sklearn.preprocessing import StandardScaler
 from beat_snp500 import config
 from beat_snp500.data.factors import load_ff5
 from beat_snp500.features.pipeline import build_feature_panel
-from beat_snp500.models.champion import _months, _rank_label, decile_spread, spearman_ic
+from beat_snp500.models.lgbm import _months, _rank_label, decile_spread, spearman_ic
 
 ALPHAS = [0.1, 1.0, 10.0, 100.0]
 
@@ -71,7 +71,7 @@ def main() -> int:
     ic = spearman_ic(scores, panel["fwd_return_1m"])
     spread = decile_spread(scores, panel["fwd_return_1m"])
 
-    champ_ic = pd.read_parquet(config.BACKTEST_DIR / "ic_monthly.parquet").set_index("date")["ic"]
+    lgbm_ic = pd.read_parquet(config.BACKTEST_DIR / "ic_monthly.parquet").set_index("date")["ic"]
 
     print(f"selected ridge alpha: {alpha}")
     print(f"n months scored: {ic.shape[0]}")
@@ -79,13 +79,13 @@ def main() -> int:
     print(f"{'':14s}{'mean IC':>10s}{'std IC':>10s}{'IC IR':>10s}{'mean spread':>14s}")
     print(f"{'ridge':14s}{ic.mean():10.4f}{ic.std():10.4f}{ic.mean()/ic.std():10.4f}"
           f"{spread.mean():14.4f}")
-    print(f"{'champion':14s}{champ_ic.mean():10.4f}{champ_ic.std():10.4f}"
-          f"{champ_ic.mean()/champ_ic.std():10.4f}")
+    print(f"{'lgbm':14s}{lgbm_ic.mean():10.4f}{lgbm_ic.std():10.4f}"
+          f"{lgbm_ic.mean()/lgbm_ic.std():10.4f}")
 
-    common = ic.index.intersection(champ_ic.index)
-    beat_frac = (ic.loc[common] > champ_ic.loc[common]).mean()
+    common = ic.index.intersection(lgbm_ic.index)
+    beat_frac = (ic.loc[common] > lgbm_ic.loc[common]).mean()
     print()
-    print(f"ridge IC > champion IC in {beat_frac:.0%} of the {len(common)} overlapping months")
+    print(f"ridge IC > lgbm IC in {beat_frac:.0%} of the {len(common)} overlapping months")
     return 0
 
 
