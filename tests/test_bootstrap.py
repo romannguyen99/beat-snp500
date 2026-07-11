@@ -33,3 +33,17 @@ def test_costs_lower_the_band():
     free = random_portfolio_bootstrap(uni, hr, n_draws=10, cost_bps=0.0)
     costly = random_portfolio_bootstrap(uni, hr, n_draws=10, cost_bps=10.0)
     assert costly["band"]["p50"].iloc[-1] < free["band"]["p50"].iloc[-1]
+
+
+def test_per_month_pick_counts():
+    dates = pd.date_range("2024-01-31", periods=1, freq="ME")
+    tickers = [f"T{i}" for i in range(30)]
+    # 15 winners (+10%), 15 losers (0%). A 1-name draw lands on +10% in ~half
+    # of draws, so p95 == 1.10 iff the per-month count of 1 is respected; the
+    # default 10-name draw's p95 sits far below 1.10 (needs all 10 winners).
+    hr = pd.DataFrame(0.0, index=dates, columns=tickers)
+    hr.iloc[0, :15] = 0.10
+    uni = {t: tickers for t in dates}
+    out = random_portfolio_bootstrap(uni, hr, n_draws=200,
+                                     n_picks={dates[0]: 1}, cost_bps=0.0)
+    assert out["band"]["p95"].iloc[0] == pytest.approx(1.10)

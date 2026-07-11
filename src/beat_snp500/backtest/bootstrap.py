@@ -11,7 +11,7 @@ def monthly_holding_returns(close: pd.DataFrame, month_ends) -> pd.DataFrame:
 
 
 def random_portfolio_bootstrap(universe: dict, holding_rets: pd.DataFrame,
-                               n_draws: int = 1000, n_picks: int = config.N_PICKS,
+                               n_draws: int = 1000, n_picks: int | dict = 10,
                                cost_bps: float = config.COST_BPS_ONE_WAY,
                                seed: int = config.SEED) -> dict:
     rng = np.random.default_rng(seed)
@@ -26,7 +26,8 @@ def random_portfolio_bootstrap(universe: dict, holding_rets: pd.DataFrame,
         if rets_t.empty:
             monthly[:, j] = 0.0
             continue
-        k = min(n_picks, len(rets_t))
+        want = n_picks[t] if isinstance(n_picks, dict) else n_picks
+        k = min(want, len(rets_t))
         for d in range(n_draws):
             sample = rng.choice(rets_t.index.to_numpy(), size=k, replace=False)
             monthly[d, j] = rets_t[sample].mean() - cost_per_month
