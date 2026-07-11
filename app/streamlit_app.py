@@ -55,9 +55,9 @@ def _style_axes(fig, yaxis_title=None):
 
 
 st.set_page_config(page_title="beat-snp500", page_icon="📈", layout="wide")
-st.title("beat-snp500")
-st.caption("Educational quant research project — NOT investment advice. "
-           "Champion: LightGBM walk-forward ranking. Challenger: K-Means momentum cluster.")
+st.title("Can you beat S&P 500?")
+st.caption("This is an educational quant research project, NOT investment advice. "
+           "The model uses LightGBM for walk-forward ranking and a challenger as K-Means momentum cluster.")
 
 tab_today, tab_live, tab_bt, tab_method = st.tabs(
     ["Today's Top 10", "Live Performance", "Backtest Report", "Methodology & Limitations"])
@@ -173,7 +173,9 @@ with tab_method:
   (rolling 36-month training window, retrained monthly, hyperparameters frozen after
   selection on the first window).
 - **Challenger:** monthly K-Means (k=4); the momentum cluster is identified by centroid
-  behaviour, and its top 10 stocks by composite momentum are selected.
+  behaviour, and its top 10 stocks by composite momentum are selected. If the momentum
+  cluster has fewer than 10 members that month, no trade is made and the prior month's
+  holdings are kept (no forced concentration into a handful of names).
 - **Backtest:** signal at month-end close, buy-and-hold with weight drift for one month,
   10 bps one-way cost on actual turnover. Simple returns throughout.
 - **Benchmarks:** SPY and 1,000 random 10-stock portfolios drawn from the same
