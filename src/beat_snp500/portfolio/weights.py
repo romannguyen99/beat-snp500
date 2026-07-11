@@ -31,7 +31,7 @@ def max_sharpe_weights(close: pd.DataFrame, tickers, asof,
 
 
 def conviction_weights(signals: dict[str, float],
-                       cap: float = None) -> dict[str, float]:
+                       cap: float = config.WEIGHT_CAP) -> dict[str, float]:
     """Signal-proportional weights with a per-stock cap (water-filling).
 
     Selection thresholds are >= 0 so signals must be strictly positive.
@@ -43,10 +43,6 @@ def conviction_weights(signals: dict[str, float],
     w = pd.Series(signals, dtype=float)
     if (w <= 0).any():
         raise ValueError("conviction_weights requires strictly positive signals")
-    if cap is None:
-        # Apply cap only if conviction spread is extreme (max/min > 10)
-        cap_needed = (w.max() / w.min()) > 10.0
-        cap = config.WEIGHT_CAP if cap_needed else float('inf')
     if len(w) * cap < 1.0 - 1e-12:
         raise ValueError(f"cap {cap} infeasible for {len(w)} names")
     w = w / w.sum()
