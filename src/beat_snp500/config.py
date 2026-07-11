@@ -25,8 +25,20 @@ WINSOR_PCT = 0.005
 COST_BPS_ONE_WAY = 10.0
 SEED = 0
 
-FEATURES = [
+BASE_FEATURES = [
     "return_1m", "return_3m", "return_6m", "return_12m",
     "gk_vol", "rsi", "atr_norm", "bb_width", "macd_hist",
     "beta_mkt", "beta_smb", "beta_hml", "beta_rmw", "beta_cma",
 ]
+
+# model inputs; validated extras get appended here (spec §4b), while
+# BASE_FEATURES stays the clustering space for K-means
+FEATURES = list(BASE_FEATURES)
+
+MIN_PICKS = 5          # fewer must-buys than this -> hold previous portfolio
+MAX_PICKS = 10         # more than this -> keep the highest-signal names
+WEIGHT_CAP = 0.20      # per-stock cap; 5 * 0.20 = 1.0 keeps the floor fully invested
+MUST_BUY_Z_KMEANS = 0.0
+MUST_BUY_Z_LGBM = 1.0
+CHAMPION = "kmeans"    # role pointer (re-rated 2026-07); the other model is challenger
+DEV_END = "2019-12-31"  # tuning/feature selection uses months <= this; one holdout pass after

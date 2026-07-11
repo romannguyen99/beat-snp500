@@ -1,5 +1,7 @@
 import pandas as pd
 
+from beat_snp500 import config
+
 
 def equal_weights(tickers) -> dict[str, float]:
     return {t: 1.0 / len(tickers) for t in tickers}
@@ -26,3 +28,34 @@ def max_sharpe_weights(close: pd.DataFrame, tickers, asof,
         return {k: v / total for k, v in w.items()}
     except Exception:
         return equal_weights(list(px.columns))
+
+
+def conviction_weights(signals: dict[str, float],
+                       cap: float = None) -> dict[str, float]:
+    """Signal-proportional weights with a per-stock cap (water-filling).
+
+    Selection thresholds are >= 0 so signals must be strictly positive.
+    Feasibility (len * cap >= 1) is guaranteed by MIN_PICKS * WEIGHT_CAP = 1;
+    with that guard the redistribution loop always terminates with sum == 1.
+    """
+    if not signals:
+        return {}
+    w = pd.Series(signals, dtype=float)
+    if (w <= 0).any():
+        raise ValueError("conviction_weights requires strictly positive signals")
+    if cap is None:
+        # Apply cap only if conviction spread is extreme (max/min > 10)
+        cap_needed = (w.max() / w.min()) > 10.0
+        cap = config.WEIGHT_CAP if cap_needed else float('inf')
+    if len(w) * cap < 1.0 - 1e-12:
+        raise ValueError(f"cap {cap} infeasible for {len(w)} names")
+    w = w / w.sum()
+    for _ in range(len(w)):
+        over = w > cap + 1e-12
+        if not over.any():
+            break
+        excess = float((w[over] - cap).sum())
+        w[over] = cap
+        under = w < cap - 1e-12
+        w[under] += excess * w[under] / float(w[under].sum())
+    return {t: float(v) for t, v in w.items()}
