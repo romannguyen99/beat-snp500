@@ -42,7 +42,11 @@ def test_build_leaderboards(make_panel, tmp_path):
 
 
 def test_build_leaderboards_without_model(make_panel, tmp_path):
-    build_leaderboards(make_panel(n_months=5), None, tmp_path, pd.Timestamp("2026-07-02"))
+    # n_tickers large enough that the momentum cluster k-means finds is
+    # reliably >= N_PICKS, otherwise kmeans_top10's min-cluster-size guard
+    # (see test_challenger.py) skips the month and no board gets written
+    build_leaderboards(make_panel(n_months=5, n_tickers=200), None, tmp_path,
+                       pd.Timestamp("2026-07-02"))
     assert not (tmp_path / "leaderboard_champion.json").exists()
     assert (tmp_path / "leaderboard_challenger.json").exists()
 

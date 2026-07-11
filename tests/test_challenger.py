@@ -33,6 +33,14 @@ def test_too_few_stocks_returns_empty():
     assert kmeans_top10(month) == []
 
 
+def test_small_momentum_cluster_returns_empty():
+    # universe is plenty large, but the momentum cluster itself has fewer
+    # members than n_picks -- shouldn't silently hand back a concentrated
+    # sub-10-name (or single-stock) "portfolio"
+    month, hot = make_month(n=40, n_hot=3)
+    assert kmeans_top10(month) == []
+
+
 def test_challenger_picks_shapes():
     month, hot = make_month()
     dates = pd.date_range("2020-01-31", periods=2, freq="ME")

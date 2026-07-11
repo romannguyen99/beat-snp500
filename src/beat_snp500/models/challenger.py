@@ -23,6 +23,8 @@ def kmeans_top10(month_df: pd.DataFrame, n_picks: int = config.N_PICKS,
     # the momentum cluster is identified by its behaviour, never by label index
     best_cluster = composite.groupby(labels).mean().idxmax()
     members = composite[labels == best_cluster].sort_values(ascending=False)
+    if len(members) < n_picks:
+        return []
     return members.head(n_picks).index.tolist()
 
 

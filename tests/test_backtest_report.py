@@ -6,11 +6,14 @@ from beat_snp500.jobs.backtest_report import run_report, survivorship_stats
 
 
 def test_run_report_writes_artifacts(make_prices, make_factors, make_membership, tmp_path):
-    tickers = tuple(f"S{i:02d}" for i in range(15)) + ("SPY",)
+    # enough tickers that a k=4 momentum cluster is reliably >= N_PICKS=10;
+    # kmeans_top10's min-cluster-size guard skips months where it isn't
+    # (see test_challenger.py::test_small_momentum_cluster_returns_empty)
+    tickers = tuple(f"S{i:02d}" for i in range(60)) + ("SPY",)
     prices = make_prices(tickers=tickers)
     membership = make_membership(tickers=tuple(t for t in tickers if t != "SPY"))
     metrics = run_report(prices, membership, make_factors(), tmp_path,
-                         top_n=15, train_window=12, n_draws=20)
+                         top_n=60, train_window=12, n_draws=20)
     for f in ["equity_curves.parquet", "metrics.json", "ic_monthly.parquet",
               "bootstrap.parquet", "bootstrap_summary.json", "survivorship.parquet",
               "picks.json"]:
