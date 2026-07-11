@@ -59,10 +59,14 @@
 from beat_snp500.portfolio.weights import conviction_weights
 
 
-def test_conviction_weights_proportional_and_sums_to_one():
-    w = conviction_weights({"A": 2.0, "B": 1.0, "C": 1.0, "D": 1.0, "E": 1.0})
+def test_conviction_weights_proportional_when_cap_not_binding():
+    # 10 names, 2:1 spread: the top weight is 2/11 = 18.2%, under the 20% cap,
+    # so weights stay purely signal-proportional (with 5 names any spread
+    # would breach the cap and equalize -- covered by the floor-case test)
+    signals = {"A": 2.0} | {f"B{i}": 1.0 for i in range(9)}
+    w = conviction_weights(signals)
     assert sum(w.values()) == pytest.approx(1.0)
-    assert w["A"] == pytest.approx(2 * w["B"])
+    assert w["A"] == pytest.approx(2 * w["B0"])
 
 
 def test_conviction_weights_caps_and_redistributes():
