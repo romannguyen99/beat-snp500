@@ -163,8 +163,9 @@ improve LightGBM's dev-period walk-forward IC.
   `test_backtest_report`; new tests for `conviction_weights` (proportionality,
   cap + redistribution, sums to 1), both must-buy rules, the 5/10 guardrails,
   and migration idempotency.
-- **Repo hygiene**: delete the ~20 accidental `* 2.py` duplicate files
-  (Finder copy artifacts) in `src/` and `tests/`.
+- **Repo hygiene**: verified no action needed — the `* 2` duplicate artifacts
+  exist only inside `.venv/site-packages` (pip internals, gitignored), not in
+  the repo.
 - **Backtest refresh**: rerun the full report; commit new
   `metrics.json` / `picks.json` / curves as the new baseline.
 
