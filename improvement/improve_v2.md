@@ -23,12 +23,18 @@ tested one new candidate feature the same disciplined way.
   owned** and tries again next month. This is the same "don't force a bad
   bet" idea from Round 1's bug fix, now applied as a general floor for both
   models rather than a one-off patch. (`config.MIN_PICKS = 5`,
-  `config.MAX_PICKS = 10`.) In practice, over the 181 monthly rebalances in
-  this backtest, the K-means model held its prior portfolio instead of
-  trading in 16 of them (~9%), and picked anywhere from 5 to 10 names
-  (average 9.6) the rest of the time; LightGBM held in 20 months (~11%) and,
-  every remaining month, its ≥1-standard-deviation threshold cleared exactly
-  10 names — it never landed between 5 and 9.
+  `config.MAX_PICKS = 10`.) In practice, over K-means's full 197-month
+  history in this backtest (2010-02 through 2026-06, `picks.json`), it held
+  its prior portfolio instead of trading in 32 of them (~16%), and picked
+  anywhere from 5 to 10 names (average 9.6) the rest of the time. LightGBM's
+  own scored history is shorter — its 36-month training window has to fill
+  first — covering 161 months from 2013-02 through 2026-06. Over that same
+  161-month window shared by both models, K-means held in 16 months (~10%),
+  while LightGBM held in **zero**: its ≥1-standard-deviation threshold
+  cleared exactly 10 names in every single one of those 161 months. The
+  must-buy floor never actually bound for LightGBM in this backtest — in
+  practice it stayed a top-10 portfolio with conviction weights, not the
+  variable-count strategy this section describes for K-means.
 - **Conviction weighting with a 20% cap, instead of an equal split.** Money
   is now allocated in proportion to how strong each stock's signal is
   (`portfolio/weights.conviction_weights`), but **no single stock can exceed
