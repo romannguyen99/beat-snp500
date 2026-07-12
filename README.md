@@ -7,10 +7,15 @@ A quant research project that ranks S&P 500 stocks daily and paper-tracks two
 
 ## What it does
 
-- **Champion:** LightGBM model trained walk-forward on monthly cross-sectional
-  features, predicting next-month return ranks. Top 10 picks, monthly rebalance.
-- **Challenger:** K-Means clustering (k=4); the momentum cluster is identified by
-  centroid behaviour each month and its top 10 stocks are selected.
+- **Champion — K-Means momentum cluster:** monthly K-Means (k=4) on the feature
+  cross-section; the momentum cluster is identified by centroid behaviour, and its
+  members with above-universe-average composite momentum (z > 0) become must-buys —
+  minimum 5 names (else hold previous portfolio), maximum 10, weighted by conviction
+  with a 20% per-stock cap.
+- **Challenger — LightGBM ranker:** LightGBM regressor on cross-sectional return ranks,
+  walk-forward (rolling 36-month window, retrained monthly); must-buys are names scoring
+  ≥ 1 standard deviation above the monthly cross-section, same 5/10 floor-cap and
+  conviction weighting.
 - **Backtest hygiene:** point-in-time index membership, adjusted prices, leak-tested
   features, turnover-based transaction costs, SPY + random-portfolio benchmarks.
 - **Pipeline:** GitHub Actions updates data, re-scores stocks daily, retrains and

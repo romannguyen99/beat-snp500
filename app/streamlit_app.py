@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -6,11 +7,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+from beat_snp500 import config  # noqa: E402  (needs ROOT on sys.path first)
+
 OUT = ROOT / "data" / "outputs"
 BT = OUT / "backtest"
 
 # Palette per the dataviz skill's reference instance (references/palette.md).
-# champion / challenger / champion_ms / challenger_ms are four *distinct*
+# kmeans / lgbm / kmeans_ms / lgbm_ms are four *distinct*
 # strategy variants that appear together on the backtest equity-curve chart,
 # so each takes its own fixed-order categorical slot (blue, aqua, yellow,
 # green — slots 1-4) rather than tinting one hue per model family; a 4-hue
@@ -23,12 +27,15 @@ BT = OUT / "backtest"
 # rendered in muted ink with a dashed line (identity via line style, not a
 # 5th competing hue) rather than spent from the categorical palette.
 COLORS = {
-    "champion": "#2a78d6",       # categorical slot 1 (blue)
-    "challenger": "#1baf7a",     # categorical slot 2 (aqua)
-    "champion_ms": "#eda100",    # categorical slot 3 (yellow) - champion, max-Sharpe weighted
-    "challenger_ms": "#008300",  # categorical slot 4 (green) - challenger, max-Sharpe weighted
-    "spy": "#898781",            # muted ink (benchmark reference, not a categorical identity)
+    "kmeans": "#2a78d6",     # categorical slot 1 (blue)
+    "lgbm": "#1baf7a",       # categorical slot 2 (aqua)
+    "kmeans_ms": "#eda100",  # categorical slot 3 (yellow) - kmeans, max-Sharpe weighted
+    "lgbm_ms": "#008300",    # categorical slot 4 (green) - lgbm, max-Sharpe weighted
+    "spy": "#898781",        # muted ink (benchmark reference, not a categorical identity)
 }
+LABELS = {"kmeans": "K-Means momentum cluster", "lgbm": "LightGBM ranker"}
+CHAMPION = config.CHAMPION
+CHALLENGER = "lgbm" if CHAMPION == "kmeans" else "kmeans"
 BAND_FILL = "rgba(137,135,129,0.15)"  # muted ink wash for the random-portfolio band
 GRIDLINE = "#e1e0d9"
 
@@ -57,21 +64,32 @@ def _style_axes(fig, yaxis_title=None):
 st.set_page_config(page_title="beat-snp500", page_icon="📈", layout="wide")
 st.title("Can you beat S&P 500?")
 st.caption("This is an educational quant research project, NOT investment advice. "
-           "The model uses LightGBM for walk-forward ranking and a challenger as K-Means momentum cluster.")
+           f"Champion: {LABELS[CHAMPION]}. Challenger: {LABELS[CHALLENGER]}. "
+           "Each buys only its must-buy names (5-10 per month), "
+           "conviction-weighted with a 20% per-stock cap.")
 
 tab_today, tab_live, tab_bt, tab_method = st.tabs(
-    ["Today's Top 10", "Live Performance", "Backtest Report", "Methodology & Limitations"])
+    ["Today's Portfolios", "Live Performance", "Backtest Report", "Methodology & Limitations"])
 
 with tab_today:
-    for model in ["champion", "challenger"]:
+    for model in [CHAMPION, CHALLENGER]:
         data = load_json(OUT / f"leaderboard_{model}.json")
-        st.subheader(model.title())
+        role = "🏆 Champion" if model == CHAMPION else "Challenger"
+        st.subheader(f"{LABELS[model]} — {role}")
         if not data:
             st.info("No leaderboard yet — the daily pipeline has not produced one.")
             continue
-        st.caption(f"As of {data['as_of']} · signal month {data['signal_month']}")
+        st.caption(f"As of {data['as_of']} · signal month {data['signal_month']}"
+                   + (f" · {len(data['picks'])} must-buy names"
+                      if data.get("picks") else ""))
+        if data.get("status") == "hold" or not data.get("picks"):
+            st.info("Holding previous portfolio — fewer than 5 names cleared "
+                    "the must-buy bar this month.")
+            continue
         rows = pd.DataFrame(
-            [{"ticker": p["ticker"], "score": round(p["score"], 4), **p["features"]}
+            [{"ticker": p["ticker"],
+              "weight": f"{p['weight']:.1%}" if "weight" in p else "—",
+              "score": round(p["score"], 3), **p["features"]}
              for p in data["picks"]])
         st.dataframe(rows, hide_index=True, use_container_width=True)
 
@@ -106,7 +124,7 @@ with tab_bt:
                                      showlegend=False, hoverinfo="skip"))
             fig.add_trace(go.Scatter(x=band["date"], y=band["p05"], fill="tonexty",
                                      fillcolor=BAND_FILL, line=dict(width=0),
-                                     name="random top-10 (5–95%)"))
+                                     name="random count-matched (5–95%)"))
         for series, g in curves.groupby("series"):
             line = dict(color=COLORS.get(series), width=2)
             if series == "spy":
@@ -126,7 +144,7 @@ with tab_bt:
             ic_std = float(ic["ic"].std())
             ic_ir = mean_ic / ic_std if ic_std else float("nan")
             mean_spread = float(ic["decile_spread"].mean())
-            champ_turnover = metrics.get("turnover", {}).get("champion")
+            champ_turnover = metrics.get("turnover", {}).get(CHAMPION)
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Mean IC", f"{mean_ic:.3f}")
             c2.metric("IC IR", f"{ic_ir:.2f}")
@@ -137,14 +155,14 @@ with tab_bt:
         if boot:
             st.caption(
                 f"Champion CAGR sits at the {boot['champion_cagr_percentile']:.0%} "
-                f"percentile of 1,000 random 10-stock portfolios "
+                f"percentile of 1,000 random count-matched portfolios "
                 f"(random p50 CAGR {boot['cagr_p50']:.1%}).")
         if ic is not None:
             fig2 = go.Figure()
             fig2.add_trace(go.Bar(x=ic["date"], y=ic["ic"], name="Monthly rank IC",
-                                  marker_color=COLORS["champion"]))
+                                  marker_color=COLORS["lgbm"]))
             fig2.add_trace(go.Bar(x=ic["date"], y=ic["decile_spread"], name="Decile spread",
-                                  marker_color=COLORS["challenger"]))
+                                  marker_color=COLORS["lgbm_ms"]))
             fig2.update_layout(barmode="group")
             _style_axes(fig2, yaxis_title="IC / decile spread")
             st.plotly_chart(fig2, use_container_width=True)
@@ -169,17 +187,19 @@ with tab_method:
 - **Features (monthly, data ≤ t only):** 1/3/6/12-month momentum (winsorized
   cross-sectionally each month), Garman-Klass volatility, RSI, normalized ATR,
   Bollinger width, MACD histogram, rolling 24-month Fama-French-5 betas lagged one month.
-- **Champion:** LightGBM regressor on cross-sectional return ranks, walk-forward
-  (rolling 36-month training window, retrained monthly, hyperparameters frozen after
-  selection on the first window).
-- **Challenger:** monthly K-Means (k=4); the momentum cluster is identified by centroid
-  behaviour, and its top 10 stocks by composite momentum are selected. If the momentum
-  cluster has fewer than 10 members that month, no trade is made and the prior month's
-  holdings are kept (no forced concentration into a handful of names).
+- **Champion — K-Means momentum cluster:** monthly K-Means (k=4) on the feature
+  cross-section; the momentum cluster is identified by centroid behaviour, and its
+  members with above-universe-average composite momentum (z > 0) become must-buys —
+  minimum 5 names (else hold previous portfolio), maximum 10, weighted by conviction
+  with a 20% per-stock cap.
+- **Challenger — LightGBM ranker:** LightGBM regressor on cross-sectional return ranks,
+  walk-forward (rolling 36-month window, retrained monthly); must-buys are names scoring
+  ≥ 1 standard deviation above the monthly cross-section, same 5/10 floor-cap and
+  conviction weighting.
 - **Backtest:** signal at month-end close, buy-and-hold with weight drift for one month,
   10 bps one-way cost on actual turnover. Simple returns throughout.
-- **Benchmarks:** SPY and 1,000 random 10-stock portfolios drawn from the same
-  point-in-time universe.
+- **Benchmarks:** SPY and 1,000 random portfolios drawn from the same point-in-time
+  universe, count-matched to the champion's actual monthly holdings.
 
 ## Limitations (read this)
 
