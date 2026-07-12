@@ -25,16 +25,20 @@ def _months(panel: pd.DataFrame) -> pd.DatetimeIndex:
     return panel.index.get_level_values("date").unique().sort_values()
 
 
-def _fit(panel: pd.DataFrame, months, params) -> lgb.LGBMRegressor:
+def _fit(panel: pd.DataFrame, months, params,
+        feature_cols: list[str] | None = None) -> lgb.LGBMRegressor:
+    cols = feature_cols or config.FEATURES
     rows = panel[panel.index.get_level_values("date").isin(months)]
     y = _rank_label(rows["fwd_return_1m"]).dropna()
-    X = rows.loc[y.index, config.FEATURES]
+    X = rows.loc[y.index, cols]
     return lgb.LGBMRegressor(**params).fit(X, y)
 
 
-def _score_month(model, panel: pd.DataFrame, t) -> pd.Series:
+def _score_month(model, panel: pd.DataFrame, t,
+                 feature_cols: list[str] | None = None) -> pd.Series:
+    cols = feature_cols or config.FEATURES
     rows = panel.xs(t, level="date", drop_level=False)
-    return pd.Series(model.predict(rows[config.FEATURES]), index=rows.index)
+    return pd.Series(model.predict(rows[cols]), index=rows.index)
 
 
 def spearman_ic(scores: pd.Series, fwd: pd.Series) -> pd.Series:
@@ -55,14 +59,16 @@ def decile_spread(scores: pd.Series, fwd: pd.Series) -> pd.Series:
 
 def select_params(panel: pd.DataFrame,
                   train_window: int = config.TRAIN_WINDOW_MONTHS,
-                  val_months: int = 6) -> dict:
+                  val_months: int = 6,
+                  feature_cols: list[str] | None = None) -> dict:
     months = _months(panel)
     fit_months = months[: train_window - val_months]
     val = months[train_window - val_months: train_window]
     best, best_ic = CANDIDATE_PARAMS[0], -2.0
     for params in CANDIDATE_PARAMS:
-        model = _fit(panel, fit_months, params)
-        scores = pd.concat([_score_month(model, panel, t) for t in val])
+        model = _fit(panel, fit_months, params, feature_cols=feature_cols)
+        scores = pd.concat([_score_month(model, panel, t, feature_cols=feature_cols)
+                           for t in val])
         ic = spearman_ic(scores, panel["fwd_return_1m"]).mean()
         if ic > best_ic:
             best, best_ic = params, ic
@@ -71,14 +77,15 @@ def select_params(panel: pd.DataFrame,
 
 def walk_forward_scores(panel: pd.DataFrame,
                         train_window: int = config.TRAIN_WINDOW_MONTHS,
-                        params: dict | None = None) -> pd.Series:
+                        params: dict | None = None,
+                        feature_cols: list[str] | None = None) -> pd.Series:
     months = _months(panel)
     if params is None:
-        params = select_params(panel, train_window=train_window)
+        params = select_params(panel, train_window=train_window, feature_cols=feature_cols)
     out = []
     for i in range(train_window, len(months)):
-        model = _fit(panel, months[i - train_window: i], params)
-        out.append(_score_month(model, panel, months[i]))
+        model = _fit(panel, months[i - train_window: i], params, feature_cols=feature_cols)
+        out.append(_score_month(model, panel, months[i], feature_cols=feature_cols))
     return pd.concat(out).sort_index() if out else pd.Series(dtype=float)
 
 
