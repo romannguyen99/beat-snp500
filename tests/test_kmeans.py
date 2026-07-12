@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from beat_snp500 import config
 from beat_snp500.models.kmeans import (cluster_month, kmeans_must_buys,
@@ -66,3 +67,20 @@ def test_kmeans_picks_weights_valid():
         assert config.MIN_PICKS <= len(w) <= config.MAX_PICKS
         assert sum(w.values()) == 1.0 or abs(sum(w.values()) - 1.0) < 1e-9
         assert max(w.values()) <= config.WEIGHT_CAP + 1e-9
+
+
+def test_mom_modes_and_select_rules_run():
+    month, hot = make_month()
+    for mom_mode in ("mean_3_6_12", "12_1", "vol_scaled"):
+        for select_rule in ("mean", "risk_adj"):
+            must = kmeans_must_buys(month, mom_mode=mom_mode,
+                                    select_rule=select_rule)
+            assert isinstance(must, dict)  # may be {} (hold) but never crash
+
+
+def test_unknown_mode_raises():
+    month, _ = make_month()
+    with pytest.raises(ValueError):
+        kmeans_must_buys(month, mom_mode="nope")
+    with pytest.raises(ValueError):
+        kmeans_must_buys(month, select_rule="nope")

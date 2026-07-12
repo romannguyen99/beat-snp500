@@ -38,6 +38,8 @@ MIN_PICKS = 5          # fewer must-buys than this -> hold previous portfolio
 MAX_PICKS = 10         # more than this -> keep the highest-signal names
 WEIGHT_CAP = 0.20      # per-stock cap; 5 * 0.20 = 1.0 keeps the floor fully invested
 MUST_BUY_Z_KMEANS = 0.0
+KMEANS_MOM_MODE = "mean_3_6_12"   # {"mean_3_6_12", "12_1", "vol_scaled"}
+KMEANS_SELECT_RULE = "mean"       # {"mean", "risk_adj"}
 MUST_BUY_Z_LGBM = 1.0
 CHAMPION = "kmeans"    # role pointer (re-rated 2026-07); the other model is challenger
 DEV_END = "2019-12-31"  # tuning/feature selection uses months <= this; one holdout pass after
