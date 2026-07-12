@@ -32,7 +32,11 @@ BASE_FEATURES = [
 
 # model inputs; validated extras get appended here (spec §4b), while
 # BASE_FEATURES stays the clustering space for K-means
-FEATURES = list(BASE_FEATURES)
+FEATURES = list(BASE_FEATURES) + [
+    # ADOPTED 2026-07: beat baseline on dev (IC +0.0015 vs -0.0031) and
+    # holdout (-0.0127 vs -0.0240) — see data/outputs/tuning/feature_eval.json
+    "mom_vol_scaled",
+]
 
 MIN_PICKS = 5          # fewer must-buys than this -> hold previous portfolio
 MAX_PICKS = 10         # more than this -> keep the highest-signal names
