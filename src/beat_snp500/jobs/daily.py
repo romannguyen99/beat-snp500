@@ -43,7 +43,12 @@ def build_leaderboards(panel: pd.DataFrame, booster, out_dir, as_of) -> dict:
     feats = month[config.FEATURES]
     signals = {}
     if booster is not None:
-        scores = pd.Series(booster.predict(feats), index=feats.index)
+        # Score on the booster's own schema, not today's config.FEATURES: a
+        # stored production model predates the newest feature promotion and
+        # must keep predicting on its trained columns until the next monthly
+        # retrain replaces it, or this crashes on the first post-promotion run.
+        cols = booster.feature_name()
+        scores = pd.Series(booster.predict(month[cols]), index=month.index)
         signals["lgbm"] = lgbm_must_buys(scores)
     signals["kmeans"] = kmeans_must_buys(month)
     boards = {}

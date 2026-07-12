@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import lightgbm as lgb
 import pandas as pd
 import pytest
 
@@ -42,6 +43,26 @@ def test_build_leaderboards(make_panel, tmp_path):
         assert weights == sorted(weights, reverse=True)
         assert sum(weights) == pytest.approx(1.0)
         assert set(board["picks"][0]["features"]) == set(config.FEATURES)
+    assert (tmp_path / "leaderboard_kmeans.json").exists()
+
+
+def test_build_leaderboards_survives_stale_model_schema(make_panel, tmp_path):
+    """Regression test: a booster trained on an older, narrower feature set
+    (e.g. saved before mom_vol_scaled was appended to config.FEATURES) must
+    not crash build_leaderboards when scored against today's wider panel.
+    build_leaderboards must score on the booster's own schema
+    (booster.feature_name()), not config.FEATURES, so a future feature
+    promotion can't break the stored production model before the next
+    monthly retrain replaces it.
+    """
+    panel = make_panel(n_months=30)
+    labeled = panel.dropna(subset=["fwd_return_1m"])
+    stale = lgb.LGBMRegressor(random_state=config.SEED, verbosity=-1, n_estimators=20)
+    stale.fit(labeled[config.BASE_FEATURES], labeled["fwd_return_1m"])
+    boards = build_leaderboards(panel, stale.booster_, tmp_path, pd.Timestamp("2026-07-02"))
+    assert "lgbm" in boards
+    board = read_json(tmp_path / "leaderboard_lgbm.json")
+    assert board["as_of"] == "2026-07-02"
     assert (tmp_path / "leaderboard_kmeans.json").exists()
 
 
