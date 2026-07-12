@@ -1,7 +1,7 @@
 [
   {
     "model_id": "champion_202606",
-    "type": "champion",
+    "type": "lgbm",
     "trained_through": "2026-05-31",
     "train_window_months": 36,
     "ic_mean": 0.005906260498464599,
@@ -10,7 +10,7 @@
   },
   {
     "model_id": "champion_202606",
-    "type": "champion",
+    "type": "lgbm",
     "trained_through": "2026-05-31",
     "train_window_months": 36,
     "ic_mean": 0.014140788639655259,
