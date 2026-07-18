@@ -186,7 +186,10 @@ with tab_method:
   historical changes table; top 150 by rolling 12-month dollar volume.
 - **Features (monthly, data ≤ t only):** 1/3/6/12-month momentum (winsorized
   cross-sectionally each month), Garman-Klass volatility, RSI, normalized ATR,
-  Bollinger width, MACD histogram, rolling 24-month Fama-French-5 betas lagged one month.
+  Bollinger width, MACD histogram, rolling 24-month Fama-French-5 betas lagged one
+  month — 14 base features. LightGBM consumes a 15th, volatility-scaled momentum
+  (`mom_vol_scaled`), promoted via the round-2 dev/holdout feature gate; K-means
+  still clusters on the 14 base features only.
 - **Champion — K-Means momentum cluster:** monthly K-Means (k=4) on the feature
   cross-section; the momentum cluster is identified by centroid behaviour, and its
   members with above-universe-average composite momentum (z > 0) become must-buys —
@@ -219,10 +222,10 @@ with tab_method:
   and mergers can misalign a small share of months.
 - **Fama-French publication lag:** the latest 1–3 months reuse each stock's last known
   betas (carried forward, never interpolated from the future).
-- **Sub-period concentration:** the challenger leaned on a narrow subset of names
-  during 2026 H1; the yearly table on the Backtest tab and the persisted
-  `picks.json` (per-month holdings for all four strategies) exist so any
-  sub-period can be audited directly rather than inferred from aggregate metrics.
+- **Sub-period concentration:** the K-means model (current champion) leaned on a
+  narrow subset of names during 2026 H1; the yearly table on the Backtest tab and
+  the persisted `picks.json` (per-month holdings for all four strategies) exist so
+  any sub-period can be audited directly rather than inferred from aggregate metrics.
 - **Risk-free rate:** Sharpe ratios use a single whole-period average FF risk-free rate,
   not a time-varying one.
 - **Live vs. backtest weight drift:** live tracking re-anchors target weights daily,
