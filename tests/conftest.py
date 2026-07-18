@@ -65,3 +65,11 @@ def make_panel():
         df["fwd_return_1m"] = signal_coef * df["return_12m"] + rng.normal(0, noise, len(idx))
         return df
     return _make
+
+
+@pytest.fixture(autouse=True)
+def _mlflow_stores_in_tmp(tmp_path, monkeypatch):
+    """Never let a test write the repo's real mlruns/ or registry DB."""
+    monkeypatch.setattr(config, "MLRUNS_DIR", tmp_path / "mlruns")
+    monkeypatch.setattr(config, "MLFLOW_REGISTRY_DB",
+                        tmp_path / "mlflow_registry.db")

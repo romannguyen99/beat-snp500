@@ -11,6 +11,9 @@ MEMBERSHIP_PARQUET = DATA_DIR / "membership.parquet"
 FACTORS_PARQUET = DATA_DIR / "ff5_factors.parquet"
 REGISTRY_JSON = MODELS_DIR / "registry.json"
 
+MLRUNS_DIR = ROOT / "mlruns"
+MLFLOW_REGISTRY_DB = MODELS_DIR / "mlflow_registry.db"
+
 HISTORY_START = "2008-01-01"
 EXTRA_TICKERS = ["SPY"]
 
