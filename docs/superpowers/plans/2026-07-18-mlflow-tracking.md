@@ -208,10 +208,16 @@ server. Job code talks to this module, never to MLflow directly: the daily
 pipeline constructs Tracker(strict=False) so telemetry can warn but never
 block publishing picks.
 """
+import os
 import warnings
 from contextlib import contextmanager
 
 from beat_snp500 import config
+
+# MLflow 3.x gates its maintenance-mode file store behind this flag; the
+# git-native design (spec §1) depends on the file store. setdefault so an
+# environment can still override.
+os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
 
 REGISTERED_MODEL = "lgbm"
 CURRENT_ALIAS = "current"
@@ -1078,7 +1084,7 @@ Create `docs/learning/01-experiment-tracking-mlflow.md` covering, in this order 
 2. **Concepts, mapped to this repo.** Run (one execution of `run_backtest.py`), experiment (the four folders: `backtest`, `tuning`, `feature-gate`, `production`), params vs metrics vs tags (config in, numbers out, decisions annotated — e.g. the feature gate's ADOPT/KEEP verdict tag), nested runs (the 72-config tuning grid under one parent), registered model / version / alias (`lgbm` versions; `@current` is what the daily job serves).
 3. **Why our wiring is unusual — and when you'd do it differently.** We commit `mlruns/` (text file store) and a SQLite registry to git: zero servers, fully reproducible from a clone, right-sized for one daily CI job plus one laptop. At company scale you'd run a tracking server + object-store artifacts + Postgres instead — name the trade-offs (concurrent writers, access control, big artifacts). Include the two-writer rule verbatim: *CI owns the registry; humans pull before promoting.*
 4. **Failure policy.** Why the daily job uses `Tracker(strict=False)`: telemetry must never block publishing picks; offline experiments fail loud. Point at `test_non_strict_warns_instead_of_raising`.
-5. **How to use it.** Exact commands: `git pull`, `.venv/bin/mlflow ui --backend-store-uri "file://$PWD/mlruns"`, then open http://127.0.0.1:5000; how to compare runs in the `feature-gate` experiment; how to see which model `@current` points at with the `Tracker('production').current_model_artifact()` one-liner.
+5. **How to use it.** Exact commands: `git pull`, `MLFLOW_ALLOW_FILE_STORE=true .venv/bin/mlflow ui --backend-store-uri "file://$PWD/mlruns"` (the env flag is needed because MLflow 3.x gates the file store; our `tracking.py` sets it automatically for pipeline code, but the standalone UI command needs it explicitly), then open http://127.0.0.1:5000; how to compare runs in the `feature-gate` experiment; how to see which model `@current` points at with the `Tracker('production').current_model_artifact()` one-liner.
 6. **Exercises.** (a) Find the tuning config that won dev but failed holdout (round-2 story — the data is in `data/outputs/tuning/kmeans_tuning.json` and, for new rounds, in the `tuning` experiment). (b) After the next monthly rebalance lands, find its `rebalance-YYYYMM` run and check `val_ic`. (c) Explain why `kmeans` has no registered model even though it is the champion.
 
 - [ ] **Step 2: Link from README**
@@ -1129,7 +1135,7 @@ Expected: a `daily-2026-07-18` row with `validation_ok = 1.0`.
 
 - [ ] **Step 3: Optional manual check — the UI**
 
-Run: `.venv/bin/mlflow ui --backend-store-uri "file://$PWD/mlruns"` and open http://127.0.0.1:5000 — confirm the `backtest` and `production` experiments render. Ctrl-C when done.
+Run: `MLFLOW_ALLOW_FILE_STORE=true .venv/bin/mlflow ui --backend-store-uri "file://$PWD/mlruns"` and open http://127.0.0.1:5000 — confirm the `backtest` and `production` experiments render. Ctrl-C when done.
 
 - [ ] **Step 4: Commit generated data + push**
 
