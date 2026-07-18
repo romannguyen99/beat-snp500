@@ -85,3 +85,42 @@ class Tracker:
 
     def set_tags(self, tags: dict) -> None:
         self._guarded(lambda: self._mlflow().set_tags(tags))
+
+    def _client(self):
+        from mlflow import MlflowClient
+        return MlflowClient(tracking_uri=self.tracking_uri,
+                            registry_uri=self.registry_uri)
+
+    def register_model_version(self, *, artifact: str, run_id: str | None,
+                               tags: dict) -> int | None:
+        def _register():
+            from mlflow.exceptions import MlflowException
+            client = self._client()
+            try:
+                client.create_registered_model(REGISTERED_MODEL)
+            except MlflowException:
+                pass  # already exists
+            mv = client.create_model_version(
+                REGISTERED_MODEL, source=artifact, run_id=run_id,
+                tags={k: str(v) for k, v in tags.items()})
+            client.set_registered_model_alias(REGISTERED_MODEL,
+                                              CURRENT_ALIAS, mv.version)
+            return int(mv.version)
+        return self._guarded(_register)
+
+    def current_model_artifact(self) -> str | None:
+        try:
+            mv = self._client().get_model_version_by_alias(REGISTERED_MODEL,
+                                                           CURRENT_ALIAS)
+            return mv.source
+        except Exception:
+            return None  # empty/absent registry: serve no lgbm rather than crash
+
+    def set_current(self, version: int) -> str | None:
+        def _set():
+            client = self._client()
+            client.set_registered_model_alias(REGISTERED_MODEL, CURRENT_ALIAS,
+                                              version)
+            return client.get_model_version_by_alias(REGISTERED_MODEL,
+                                                     CURRENT_ALIAS).source
+        return self._guarded(_set)

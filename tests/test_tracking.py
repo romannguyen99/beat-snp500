@@ -64,3 +64,22 @@ def test_default_uris_use_config_paths(tmp_path):
     with t.start_run(run_name="d"):
         t.log_metrics({"x": 1.0})
     assert (tmp_path / "mlruns").exists()
+
+
+def test_register_and_resolve_current(tmp_path):
+    t = tracking.Tracker("production", **_uris(tmp_path))
+    assert t.current_model_artifact() is None
+    v1 = t.register_model_version(artifact="models/a.txt", run_id=None,
+                                  tags={"ic_mean": 0.01})
+    v2 = t.register_model_version(artifact="models/b.txt", run_id=None,
+                                  tags={"ic_mean": 0.02})
+    assert (v1, v2) == (1, 2)
+    assert t.current_model_artifact() == "models/b.txt"
+
+
+def test_set_current_moves_alias(tmp_path):
+    t = tracking.Tracker("production", **_uris(tmp_path))
+    t.register_model_version(artifact="models/a.txt", run_id=None, tags={})
+    t.register_model_version(artifact="models/b.txt", run_id=None, tags={})
+    assert t.set_current(1) == "models/a.txt"
+    assert t.current_model_artifact() == "models/a.txt"
