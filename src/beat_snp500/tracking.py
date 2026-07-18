@@ -98,8 +98,9 @@ class Tracker:
             client = self._client()
             try:
                 client.create_registered_model(REGISTERED_MODEL)
-            except MlflowException:
-                pass  # already exists
+            except MlflowException as exc:
+                if exc.error_code != "RESOURCE_ALREADY_EXISTS":
+                    raise
             mv = client.create_model_version(
                 REGISTERED_MODEL, source=artifact, run_id=run_id,
                 tags={k: str(v) for k, v in tags.items()})
@@ -109,12 +110,24 @@ class Tracker:
         return self._guarded(_register)
 
     def current_model_artifact(self) -> str | None:
-        try:
-            mv = self._client().get_model_version_by_alias(REGISTERED_MODEL,
-                                                           CURRENT_ALIAS)
+        def _resolve():
+            from mlflow.exceptions import MlflowException
+            try:
+                mv = self._client().get_model_version_by_alias(
+                    REGISTERED_MODEL, CURRENT_ALIAS)
+            except MlflowException as exc:
+                # Legitimate empty states, observed on this MLflow version:
+                # no registered model at all -> RESOURCE_DOES_NOT_EXIST;
+                # model exists but @current alias unset (e.g. registration
+                # died mid-way) -> INVALID_PARAMETER_VALUE ("alias not
+                # found"). Everything else is an infra failure: re-raise so
+                # _guarded applies the strict/warn contract.
+                if exc.error_code in ("RESOURCE_DOES_NOT_EXIST",
+                                      "INVALID_PARAMETER_VALUE"):
+                    return None  # nothing registered yet — a legitimate state
+                raise
             return mv.source
-        except Exception:
-            return None  # empty/absent registry: serve no lgbm rather than crash
+        return self._guarded(_resolve)
 
     def set_current(self, version: int) -> str | None:
         def _set():

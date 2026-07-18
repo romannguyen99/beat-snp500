@@ -83,3 +83,23 @@ def test_set_current_moves_alias(tmp_path):
     t.register_model_version(artifact="models/b.txt", run_id=None, tags={})
     assert t.set_current(1) == "models/a.txt"
     assert t.current_model_artifact() == "models/a.txt"
+
+
+def test_current_model_artifact_distinguishes_empty_from_broken(tmp_path):
+    t = tracking.Tracker("production", **_uris(tmp_path))
+    assert t.current_model_artifact() is None  # empty registry: quiet None
+    # MLflow 3.14 creates missing sqlite parent dirs itself, so a merely
+    # absent directory is NOT broken. A file squatting on the parent path
+    # makes it truly unopenable (makedirs raises FileExistsError).
+    (tmp_path / "blocker").write_text("")
+    broken_uri = f"sqlite:///{tmp_path}/blocker/reg.db"
+    strict = tracking.Tracker("production",
+                              tracking_uri=(tmp_path / "mlruns").as_uri(),
+                              registry_uri=broken_uri)
+    with pytest.raises(Exception):
+        strict.current_model_artifact()
+    soft = tracking.Tracker("production", strict=False,
+                            tracking_uri=(tmp_path / "mlruns").as_uri(),
+                            registry_uri=broken_uri)
+    with pytest.warns(UserWarning, match="mlflow tracking skipped"):
+        assert soft.current_model_artifact() is None
