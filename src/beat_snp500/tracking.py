@@ -77,8 +77,11 @@ class Tracker:
         self._guarded(lambda: self._mlflow().log_params(params))
 
     def log_metrics(self, metrics: dict, step: int | None = None) -> None:
-        clean = {k: float(v) for k, v in metrics.items() if v == v}
-        self._guarded(lambda: self._mlflow().log_metrics(clean, step=step))
+        def _log():
+            clean = {k: float(v) for k, v in metrics.items()}
+            clean = {k: v for k, v in clean.items() if v == v}
+            self._mlflow().log_metrics(clean, step=step)
+        self._guarded(_log)
 
     def set_tags(self, tags: dict) -> None:
         self._guarded(lambda: self._mlflow().set_tags(tags))

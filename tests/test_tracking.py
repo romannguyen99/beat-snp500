@@ -49,3 +49,18 @@ def test_strict_raises(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError, match="store down"):
         with t.start_run(run_name="x"):
             pass
+
+
+def test_non_strict_log_metrics_bad_value_warns(tmp_path):
+    t = tracking.Tracker("tuning", strict=False, **_uris(tmp_path))
+    with t.start_run(run_name="r"):
+        with pytest.warns(UserWarning, match="mlflow tracking skipped"):
+            t.log_metrics({"m": None})
+
+
+def test_default_uris_use_config_paths(tmp_path):
+    t = tracking.Tracker("tuning")  # no URIs: defaults from patched config
+    assert t.tracking_uri == (tmp_path / "mlruns").as_uri()
+    with t.start_run(run_name="d"):
+        t.log_metrics({"x": 1.0})
+    assert (tmp_path / "mlruns").exists()
