@@ -1,7 +1,8 @@
 # beat-snp500
 
 A quant research project that ranks S&P 500 stocks daily and paper-tracks two
-10-stock strategies against SPY, with a bias-controlled walk-forward backtest.
+must-buy strategies (5-10 stocks each, sized by conviction) against SPY, with a
+bias-controlled walk-forward backtest.
 
 **Live dashboard:** _add your Streamlit Community Cloud URL here_
 

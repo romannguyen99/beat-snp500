@@ -23,7 +23,7 @@ from beat_snp500.models.kmeans import MOM_COLS
 
 def cluster_month(month_df: pd.DataFrame) -> tuple[pd.Series, pd.Series, int]:
     """month_df indexed by ticker. Returns (composite, labels, best_cluster)."""
-    X = month_df[config.FEATURES]
+    X = month_df[config.BASE_FEATURES]
     Xz = pd.DataFrame(StandardScaler().fit_transform(X.values),
                       index=X.index, columns=X.columns)
     labels = pd.Series(
