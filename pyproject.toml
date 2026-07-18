@@ -16,10 +16,13 @@ dependencies = [
     "lxml>=5.1",
     "plotly>=5.20",
     "streamlit>=1.33",
+    "mlflow-skinny>=2.15,<4",
+    "sqlalchemy>=2",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pyyaml>=6"]
+dev = ["pytest>=8", "pyyaml>=6", "mlflow>=2.15,<4"]
 
 [build-system]
 requires = ["setuptools>=68"]
