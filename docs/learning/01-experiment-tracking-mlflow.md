@@ -33,7 +33,6 @@ score" lived in three disconnected places, none of them queryable:
 
   That output was never written to a file by the script itself. It survives
   today only because someone copy-pasted it, verbatim, into
-  `.superpowers/sdd/task-8-report.md`, and from there into
   `improvement/improve_v2.md` §3. If nobody had pasted it, the fact that the
   grid's "winner" actually lost on holdout — the single most important
   result of that round's tuning work — would be gone. Nothing links that
@@ -144,8 +143,11 @@ the rule that keeps them from clobbering each other in one line:
 `scripts/promote_model.py`'s docstring carries the same rule in its own
 words: *"Two-writer rule (spec §5): CI owns the registry — run `git pull`
 before this, and push promptly after."* Concretely:
-`.github/workflows/daily.yml`'s last step commits `data models mlruns`
-(including `mlflow_registry.db`) after every monthly retrain. If you run
+`.github/workflows/daily.yml`'s last step commits `data models mlruns` after
+every weekday pipeline run — the daily heartbeat writes a new `mlruns/` run
+each day — while `mlflow_registry.db`'s contents change only on monthly
+retrains, since `register_model_version` is called only from
+`monthly_rebalance`. If you run
 `scripts/promote_model.py` without pulling first, you are promoting against
 a stale local copy of the registry and your next push can silently
 overwrite whatever CI wrote in the meantime. `git pull` first, always.
