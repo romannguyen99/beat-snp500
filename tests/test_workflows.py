@@ -20,6 +20,7 @@ def test_daily_workflow_schedule_and_permissions():
     steps = wf["jobs"]["pipeline"]["steps"]
     steps_str = " ".join(str(s) for s in steps)
     assert "run_daily.py" in steps_str and "git push" in steps_str
+    assert "git add data models mlruns" in steps_str
     cache_steps = [s for s in steps if s.get("uses", "").startswith("actions/cache@")]
     assert len(cache_steps) == 1
     assert cache_steps[0]["with"]["path"] == "data/prices.parquet"

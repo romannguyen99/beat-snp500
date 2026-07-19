@@ -42,6 +42,6 @@ jobs:
         run: |
           git config user.name "Roman Nguyen"
           git config user.email "romanvnguyen0411@gmail.com"
-          git add data models
+          git add data models mlruns
           git diff --cached --quiet || git commit -m "data: daily update $(date -u +%F)"
           git push
