@@ -11,7 +11,7 @@ import argparse
 
 import pandas as pd
 
-from beat_snp500 import config
+from beat_snp500 import config, tracking
 from beat_snp500.backtest.engine import run_backtest
 from beat_snp500.backtest.metrics import perf_metrics
 from beat_snp500.data.factors import load_ff5
@@ -71,19 +71,28 @@ def main() -> int:
 
     if not args.holdout:
         rf = rf_annual(dev_f)
+        tracker = tracking.Tracker("tuning")
         rows = []
-        for i, cfg in enumerate(GRID):
-            rows.append({**cfg, "dev_sharpe": sharpe_for(cfg, dev_panel,
-                                                         dev_close, rf)})
-            print(f"[{i + 1}/{len(GRID)}]", rows[-1])
+        with tracker.start_run(
+                run_name=f"kmeans-grid-{pd.Timestamp.today():%Y%m%d}") as parent:
+            for i, cfg in enumerate(GRID):
+                rows.append({**cfg, "dev_sharpe": sharpe_for(cfg, dev_panel,
+                                                             dev_close, rf)})
+                print(f"[{i + 1}/{len(GRID)}]", rows[-1])
+                with tracker.start_run(run_name=f"cfg-{i:02d}", nested=True):
+                    tracker.log_params(cfg)
+                    tracker.log_metrics({"dev_sharpe": rows[-1]["dev_sharpe"]})
+            current_dev = sharpe_for(CURRENT, dev_panel, dev_close, rf)
+            tracker.log_metrics({"current_dev_sharpe": current_dev})
+            parent_id = parent.info.run_id if parent is not None else None
         rows.sort(key=lambda r: (r["dev_sharpe"] != r["dev_sharpe"],
                                  -r["dev_sharpe"]))  # NaNs last
-        atomic_write_json({"current": CURRENT, "grid": rows}, REPORT)
+        atomic_write_json({"current": CURRENT, "grid": rows,
+                           "mlflow_parent_run_id": parent_id}, REPORT)
         print("\ntop 5 by dev Sharpe:")
         for r in rows[:5]:
             print(" ", r)
-        print("current config dev Sharpe:",
-              sharpe_for(CURRENT, dev_panel, dev_close, rf))
+        print("current config dev Sharpe:", current_dev)
         print(f"\nNext: review {REPORT}, then run --holdout ONCE.")
         return 0
 
@@ -93,9 +102,22 @@ def main() -> int:
     rf = rf_annual(h_f)
     w = sharpe_for(winner, h_panel, h_close, rf)
     c = sharpe_for(CURRENT, h_panel, h_close, rf)
+    verdict = "ADOPT" if w >= c else "KEEP"
+    tracker = tracking.Tracker("tuning")
+    parent_id = report.get("mlflow_parent_run_id")
+    with tracker.start_run(run_id=parent_id) if parent_id else \
+            tracker.start_run(run_name="kmeans-holdout"):
+        with tracker.start_run(run_name="holdout", nested=True):
+            tracker.log_params({f"winner_{k}": v for k, v in winner.items()})
+            tracker.log_metrics({"winner_holdout_sharpe": w,
+                                 "current_holdout_sharpe": c})
+            tracker.set_tags({"verdict": verdict})
+    report["holdout"] = {"winner": winner, "winner_sharpe": w,
+                         "current_sharpe": c, "verdict": verdict}
+    atomic_write_json(report, REPORT)
     print("holdout Sharpe — winner:", w, winner)
     print("holdout Sharpe — current:", c, CURRENT)
-    print("verdict:", "ADOPT winner" if w >= c else "KEEP current")
+    print("verdict:", f"{verdict} {'winner' if verdict == 'ADOPT' else 'current'}")
     return 0
 
 
