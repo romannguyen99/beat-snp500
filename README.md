@@ -43,6 +43,12 @@ bias-controlled walk-forward backtest.
     notebooks/         original exploratory notebook (superseded)
     docs/superpowers/  design spec and implementation plan
 
+## Learning the MLOps stack
+
+Guided chapters for junior data scientists, written as each piece was built:
+
+- [01 — Experiment tracking with MLflow](docs/learning/01-experiment-tracking-mlflow.md)
+
 ## Honesty box
 
 The dashboard's *Methodology & Limitations* tab documents residual survivorship
