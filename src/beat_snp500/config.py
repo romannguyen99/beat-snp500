@@ -36,7 +36,7 @@ BASE_FEATURES = [
 # BASE_FEATURES stays the clustering space for K-means
 FEATURES = list(BASE_FEATURES) + [
     # ADOPTED 2026-07: beat baseline on dev (IC +0.0015 vs -0.0031) and
-    # holdout (-0.0127 vs -0.0240) — see data/outputs/tuning/feature_eval.json
+    # holdout (-0.0127 vs -0.0240) — see data/outputs/tuning/feature_eval.json (schema: {"dev": ..., "holdout": ...} since 2026-07)
     "mom_vol_scaled",
 ]
 

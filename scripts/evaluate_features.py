@@ -10,10 +10,10 @@ import argparse
 
 import pandas as pd
 
-from beat_snp500 import config
+from beat_snp500 import config, tracking
 from beat_snp500.data.factors import load_ff5
 from beat_snp500.features.pipeline import build_feature_panel
-from beat_snp500.io_utils import atomic_write_json
+from beat_snp500.io_utils import atomic_write_json, read_json
 from beat_snp500.models.lgbm import spearman_ic, walk_forward_scores
 
 CANDIDATE_SETS = {
@@ -52,16 +52,40 @@ def main() -> int:
                                 membership, factors)
 
     if args.holdout:
+        tracker = tracking.Tracker("feature-gate")
+        stats = {}
         for name in ("baseline", args.holdout):
-            print(name, ic_stats(panel, CANDIDATE_SETS[name], dev=False))
-        print("ADOPT only if the candidate beats baseline here too.")
+            stats[name] = ic_stats(panel, CANDIDATE_SETS[name], dev=False)
+            print(name, stats[name])
+        verdict = ("ADOPT" if stats[args.holdout]["mean_ic"]
+                   >= stats["baseline"]["mean_ic"] else "KEEP")
+        with tracker.start_run(run_name=f"holdout-{args.holdout}"):
+            tracker.log_params({"candidate": args.holdout, "phase": "holdout",
+                                "extra_cols": ",".join(CANDIDATE_SETS[args.holdout])})
+            tracker.log_metrics({
+                "candidate_mean_ic": stats[args.holdout]["mean_ic"],
+                "candidate_ic_ir": stats[args.holdout]["ic_ir"],
+                "baseline_mean_ic": stats["baseline"]["mean_ic"],
+                "baseline_ic_ir": stats["baseline"]["ic_ir"]})
+            tracker.set_tags({"verdict": verdict})
+        report = read_json(REPORT) if REPORT.exists() else {}
+        report["holdout"] = {"candidate": args.holdout, **stats,
+                             "verdict": verdict}
+        atomic_write_json(report, REPORT)
+        print(f"verdict: {verdict} (candidate vs baseline on holdout mean IC)")
         return 0
 
-    rows = {name: ic_stats(panel, extra, dev=True)
-            for name, extra in CANDIDATE_SETS.items()}
+    tracker = tracking.Tracker("feature-gate")
+    rows = {}
+    for name, extra in CANDIDATE_SETS.items():
+        rows[name] = ic_stats(panel, extra, dev=True)
+        with tracker.start_run(run_name=f"dev-{name}"):
+            tracker.log_params({"candidate": name, "phase": "dev",
+                                "extra_cols": ",".join(extra) or "-"})
+            tracker.log_metrics(rows[name])
     for name, r in rows.items():
         print(f"{name:18s} mean IC {r['mean_ic']:+.4f}  IR {r['ic_ir']:+.2f}")
-    atomic_write_json(rows, REPORT)
+    atomic_write_json({"dev": rows}, REPORT)
     print("\nNext: pick the best non-baseline set, run --holdout <name> ONCE.")
     return 0
 
