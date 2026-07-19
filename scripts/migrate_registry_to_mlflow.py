@@ -11,11 +11,11 @@ from beat_snp500.io_utils import read_json
 
 
 def migrate(registry_json, tracker: tracking.Tracker) -> int:
-    entries = read_json(registry_json)
+    entries = sorted(read_json(registry_json), key=lambda e: e["created_at"])
     for e in entries:
         tracker.register_model_version(
             artifact=e["artifact"], run_id=None,
-            tags={"model_id": e["model_id"],
+            tags={"model_id": e["model_id"], "type": e["type"],
                   "trained_through": e["trained_through"],
                   "train_window_months": e["train_window_months"],
                   "ic_mean": e["ic_mean"], "created_at": e["created_at"],
@@ -23,6 +23,11 @@ def migrate(registry_json, tracker: tracking.Tracker) -> int:
     return len(entries)
 
 
-if __name__ == "__main__":
+def main() -> int:
     n = migrate(config.REGISTRY_JSON, tracking.Tracker("production"))
     print(f"migrated {n} entries; @current -> version {n}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

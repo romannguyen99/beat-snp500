@@ -14,9 +14,14 @@ def promote(version: int, tracker: tracking.Tracker) -> str | None:
     return tracker.set_current(version)
 
 
-if __name__ == "__main__":
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("version", type=int, help="registered lgbm version number")
     args = ap.parse_args()
     source = promote(args.version, tracking.Tracker("production"))
     print(f"@current -> version {args.version} ({source})")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
