@@ -59,7 +59,7 @@ def migrate_live_track(path: Path) -> bool:
 
 
 def main() -> int:
-    print("registry changed:", migrate_registry(config.REGISTRY_JSON))
+    print("registry changed:", migrate_registry(config.MODELS_DIR / "registry.json"))
     print("outputs renamed:", migrate_output_files(config.OUTPUTS_DIR))
     print("live_track changed:",
           migrate_live_track(config.OUTPUTS_DIR / "live_track.parquet"))

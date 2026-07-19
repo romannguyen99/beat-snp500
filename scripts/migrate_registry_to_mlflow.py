@@ -24,7 +24,7 @@ def migrate(registry_json, tracker: tracking.Tracker) -> int:
 
 
 def main() -> int:
-    n = migrate(config.REGISTRY_JSON, tracking.Tracker("production"))
+    n = migrate(config.MODELS_DIR / "registry.json", tracking.Tracker("production"))
     print(f"migrated {n} entries; @current -> version {n}")
     return 0
 
