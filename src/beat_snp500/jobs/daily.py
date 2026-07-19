@@ -13,7 +13,7 @@ from beat_snp500.features.pipeline import build_feature_panel
 from beat_snp500.io_utils import atomic_write_json, atomic_write_parquet, read_json
 from beat_snp500.models.kmeans import kmeans_must_buys
 from beat_snp500.models.lgbm import lgbm_must_buys, load_model, save_model, train_lgbm
-from beat_snp500.models.registry import append_entry, latest_model
+from beat_snp500 import tracking
 from beat_snp500.portfolio.weights import conviction_weights
 
 TRACK_COLS = ["date", "model", "ret", "spy_ret"]
@@ -105,20 +105,17 @@ def update_live_track(close: pd.DataFrame, holdings: dict, track_path, as_of) ->
     return out
 
 
-def monthly_rebalance(panel_completed: pd.DataFrame, models_dir, out_dir, registry_path,
-                      as_of, train_window: int = config.TRAIN_WINDOW_MONTHS) -> None:
+def monthly_rebalance(panel_completed: pd.DataFrame, models_dir, out_dir,
+                      as_of, train_window: int = config.TRAIN_WINDOW_MONTHS,
+                      tracker: tracking.Tracker | None = None) -> None:
+    if tracker is None:
+        tracker = tracking.Tracker("production", strict=False)
     labeled = panel_completed.dropna(subset=["fwd_return_1m"])
     model, val_ic = train_lgbm(labeled, train_window=train_window)
     latest = panel_completed.index.get_level_values("date").max()
     model_id = f"lgbm_{latest:%Y%m}"
     artifact = Path(models_dir) / f"{model_id}.txt"
     save_model(model, artifact)
-    append_entry(registry_path, {
-        "model_id": model_id, "type": "lgbm",
-        "trained_through": str(labeled.index.get_level_values("date").max().date()),
-        "train_window_months": train_window, "ic_mean": val_ic,
-        "created_at": str(pd.Timestamp(as_of).date()), "artifact": artifact_ref(artifact),
-    })
 
     month = panel_completed.xs(latest, level="date")
     scores = pd.Series(model.predict(month[config.FEATURES]), index=month.index)
@@ -135,10 +132,29 @@ def monthly_rebalance(panel_completed: pd.DataFrame, models_dir, out_dir, regist
              "weights": conviction_weights(sig)},
             Path(out_dir) / f"holdings_{name}.json")
 
+    # registered AFTER holdings are written: a registry failure must never
+    # block publishing; @current then keeps serving the prior booster until
+    # the next successful rebalance
+    trained_through = str(labeled.index.get_level_values("date").max().date())
+    run_id = None
+    with tracker.start_run(run_name=f"rebalance-{latest:%Y%m}") as run:
+        tracker.log_params({"model_id": model_id,
+                            "train_window_months": train_window,
+                            "n_features": len(config.FEATURES),
+                            "trained_through": trained_through})
+        tracker.log_metrics({"val_ic": val_ic})
+        run_id = run.info.run_id if run is not None else None
+    tracker.register_model_version(
+        artifact=artifact_ref(artifact), run_id=run_id,
+        tags={"model_id": model_id, "trained_through": trained_through,
+              "train_window_months": train_window, "ic_mean": val_ic,
+              "created_at": str(pd.Timestamp(as_of).date())})
+
 
 def run(as_of=None, force_rebalance: bool = False) -> int:
     as_of = pd.Timestamp(as_of if as_of is not None else pd.Timestamp.today()).normalize()
     rebalance = force_rebalance or is_first_weekday(as_of)
+    tracker = tracking.Tracker("production", strict=False)
 
     mem, fresh = refresh_membership(config.MEMBERSHIP_PARQUET)
     atomic_write_json({"fresh": bool(fresh), "as_of": str(as_of.date())},
@@ -151,14 +167,18 @@ def run(as_of=None, force_rebalance: bool = False) -> int:
     report = validate_prices(prices, current, as_of)
     atomic_write_json(asdict(report), config.OUTPUTS_DIR / "validation.json")
     if not report.ok:
+        with tracker.start_run(run_name=f"daily-{as_of.date()}"):
+            tracker.log_params({"as_of": str(as_of.date()),
+                                "rebalance": str(bool(rebalance))})
+            tracker.log_metrics({"validation_ok": 0})
         print(f"validation failed: {report.issues}", file=sys.stderr)
         return 1
 
     factors = load_ff5(config.FACTORS_PARQUET)
     panel = build_feature_panel(prices, mem, factors)
 
-    entry = latest_model(config.REGISTRY_JSON, "lgbm")
-    booster = load_model(resolve_artifact(entry["artifact"])) if entry else None
+    ref = tracker.current_model_artifact()
+    booster = load_model(resolve_artifact(ref)) if ref else None
     build_leaderboards(panel, booster, config.OUTPUTS_DIR, as_of)
 
     holdings = {}
@@ -169,10 +189,17 @@ def run(as_of=None, force_rebalance: bool = False) -> int:
     update_live_track(close_matrix(prices), holdings,
                       config.OUTPUTS_DIR / "live_track.parquet", as_of)
 
+    latest_month = panel.index.get_level_values("date").max()
+    n_scored = len(panel.xs(latest_month, level="date"))
+    with tracker.start_run(run_name=f"daily-{as_of.date()}"):
+        tracker.log_params({"as_of": str(as_of.date()),
+                            "rebalance": str(bool(rebalance))})
+        tracker.log_metrics({"validation_ok": 1, "n_scored": n_scored})
+
     if rebalance:
         month_start = as_of.replace(day=1)
         panel_completed = build_feature_panel(
             prices[prices["date"] < month_start], mem, factors)
         monthly_rebalance(panel_completed, config.MODELS_DIR, config.OUTPUTS_DIR,
-                          config.REGISTRY_JSON, as_of)
+                          as_of, tracker=tracker)
     return 0

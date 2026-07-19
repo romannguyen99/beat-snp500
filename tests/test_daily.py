@@ -4,14 +4,13 @@ import lightgbm as lgb
 import pandas as pd
 import pytest
 
-from beat_snp500 import config
+from beat_snp500 import config, tracking
 from beat_snp500.io_utils import read_json
 from beat_snp500.jobs.daily import (
     artifact_ref, build_leaderboards, is_first_weekday, monthly_rebalance,
     resolve_artifact, update_live_track,
 )
 from beat_snp500.models.lgbm import train_lgbm
-from beat_snp500.models.registry import load_registry
 
 
 def test_is_first_weekday():
@@ -128,13 +127,18 @@ def test_update_live_track_skips_interior_holiday_junk_row(tmp_path):
     assert out.iloc[0]["spy_ret"] == pytest.approx(105.0 / 102.0 - 1)
 
 
-def test_monthly_rebalance_writes_artifacts(make_panel, tmp_path):
+def test_monthly_rebalance_registers_and_writes_artifacts(make_panel, tmp_path):
     models_dir, out_dir = tmp_path / "models", tmp_path / "out"
-    reg = models_dir / "registry.json"
-    monthly_rebalance(make_panel(n_months=30), models_dir, out_dir, reg,
-                      pd.Timestamp("2026-07-01"), train_window=12)
-    entries = load_registry(reg)
-    assert len(entries) == 1 and entries[0]["type"] == "lgbm"
+    tracker = tracking.Tracker(
+        "production",
+        tracking_uri=(tmp_path / "mlruns").as_uri(),
+        registry_uri=f"sqlite:///{tmp_path}/reg.db")
+    monthly_rebalance(make_panel(n_months=30), models_dir, out_dir,
+                      pd.Timestamp("2026-07-01"), train_window=12,
+                      tracker=tracker)
+    ref = tracker.current_model_artifact()
+    assert ref is not None and ref.endswith(".txt")
+    assert resolve_artifact(ref).exists()
     for name in ("lgbm", "kmeans"):
         p = out_dir / f"holdings_{name}.json"
         if p.exists():  # a hold month legitimately writes nothing
