@@ -1,0 +1,9 @@
+artifact_location: file:///Users/romannguyen/Documents/Projects/beat-snp500/mlruns/832580556589764010
+creation_time: 1784427866809
+effective_trace_archival_retention: null
+experiment_id: '832580556589764010'
+last_update_time: 1784427866809
+lifecycle_stage: active
+name: backtest
+trace_location: null
+workspace: default
