@@ -69,7 +69,11 @@ class Tracker:
         run = self._guarded(_enter)
         try:
             yield run
-        finally:
+        except Exception:
+            if run is not None:
+                self._guarded(lambda: self._mlflow().end_run("FAILED"))
+            raise
+        else:
             if run is not None:
                 self._guarded(lambda: self._mlflow().end_run())
 

@@ -85,6 +85,17 @@ def test_set_current_moves_alias(tmp_path):
     assert t.current_model_artifact() == "models/a.txt"
 
 
+def test_crashed_run_recorded_failed(tmp_path):
+    t = tracking.Tracker("tuning", **_uris(tmp_path))
+    with pytest.raises(ValueError, match="boom"):
+        with t.start_run(run_name="crash") as run:
+            run_id = run.info.run_id
+            raise ValueError("boom")
+    from mlflow import MlflowClient
+    got = MlflowClient(tracking_uri=(tmp_path / "mlruns").as_uri()).get_run(run_id)
+    assert got.info.status == "FAILED"
+
+
 def test_current_model_artifact_distinguishes_empty_from_broken(tmp_path):
     t = tracking.Tracker("production", **_uris(tmp_path))
     assert t.current_model_artifact() is None  # empty registry: quiet None

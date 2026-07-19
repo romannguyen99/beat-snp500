@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from beat_snp500 import config
+from beat_snp500 import config, tracking
 from beat_snp500.data.factors import load_ff5
 from beat_snp500.data.membership import refresh_membership
 from beat_snp500.data.prices import close_matrix, update_price_cache
@@ -13,14 +13,13 @@ from beat_snp500.features.pipeline import build_feature_panel
 from beat_snp500.io_utils import atomic_write_json, atomic_write_parquet, read_json
 from beat_snp500.models.kmeans import kmeans_must_buys
 from beat_snp500.models.lgbm import lgbm_must_buys, load_model, save_model, train_lgbm
-from beat_snp500 import tracking
 from beat_snp500.portfolio.weights import conviction_weights
 
 TRACK_COLS = ["date", "model", "ret", "spy_ret"]
 
 
 def artifact_ref(path) -> str:
-    """Repo-relative artifact reference so registry.json is portable across checkouts."""
+    """Repo-relative artifact reference so registry entries are portable across checkouts."""
     p = Path(path)
     return str(p.relative_to(config.ROOT)) if p.is_relative_to(config.ROOT) else str(p)
 

@@ -58,10 +58,10 @@ in this codebase.
   `backtest`, `tuning`, `feature-gate`, `production` — one per pipeline
   stage. Each becomes its own numbered folder under `mlruns/` the first time
   `mlflow.set_experiment(name)` runs for that name (`Tracker.start_run` calls
-  it for you). Right now only `backtest` has a folder committed
-  (`mlruns/832580556589764010/`), because it's the only stage that's been
-  run for real since the switchover — `tuning`, `feature-gate`, and
-  `production` will each grow their own folder the next time their script
+  it for you). Right now both `backtest` and `production` have folders
+  committed — `production`'s from a daily heartbeat run — because those are
+  the stages that have run for real since the switchover; `tuning` and
+  `feature-gate` will each grow their own folder the next time their script
   runs.
 - **Params vs. metrics vs. tags** — three different kinds of thing you log,
   and this repo uses all three deliberately:
