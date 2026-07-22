@@ -1,0 +1,14 @@
+artifact_uri: file:///Users/romannguyen/Documents/Projects/beat-snp500/mlruns/876385905758634818/86f1102a1ce9410da98d06fc87a60683/artifacts
+end_time: 1784763079116
+entry_point_name: ''
+experiment_id: '876385905758634818'
+lifecycle_stage: active
+run_id: 86f1102a1ce9410da98d06fc87a60683
+run_name: daily-2026-07-22
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1784763079108
+status: 3
+tags: []
+user_id: runner
